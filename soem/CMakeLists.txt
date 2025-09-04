@@ -1,104 +1,120 @@
-cmake_minimum_required(VERSION 3.30)
-project(soem_example)
+cmake_minimum_required(VERSION 3.9)
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake/Modules")
+project(SOEM
+    DESCRIPTION "Simple Open EtherCAT Master"
+    VERSION 1.4.0
+    LANGUAGES C)
 
-set(CMAKE_CXX_STANDARD 20)
-set(RAISIN_ROOT "$ENV{HOME}/Desktop/raisin_ws/raisin_master")
-set(RAISIN_BUILD "$ENV{HOME}/Desktop/raisin_ws/raisin_master/build")
-set(SOEM_LIB "${RAISIN_BUILD}/src/raisin/soem/libsoem.a")
+if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  # Default to installing in SOEM source directory
+  set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_LIST_DIR}/install)
+endif()
 
-add_library(soem STATIC IMPORTED GLOBAL)
-set_target_properties(soem PROPERTIES
-        IMPORTED_LOCATION "${SOEM_LIB}"
-        INTERFACE_INCLUDE_DIRECTORIES
-        "${RAISIN_ROOT}/src/raisin/soem/soem;${RAISIN_ROOT}/src/raisin/soem/osal;${RAISIN_ROOT}/src/raisin/soem/oshw/linux"
-)
+set(SOEM_INCLUDE_INSTALL_DIR include/soem)
+set(SOEM_LIB_INSTALL_DIR lib)
 
-# Add path to SOEM's cmake config
-list(APPEND CMAKE_PREFIX_PATH "$ENV{HOME}/Desktop/SOEM-install/cmake")
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  set(BUILD_TESTS TRUE)
+else()
+  message(STATUS "SOEM: not building tests when built as dependency")
+  set(BUILD_TESTS FALSE)
+endif()
 
-## Find SOEM package
-#find_package(soem REQUIRED)
+if(WIN32)
+  set(OS "win32")
+  include_directories(oshw/win32/wpcap/Include)
+  if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    link_directories(${CMAKE_CURRENT_LIST_DIR}/oshw/win32/wpcap/Lib/x64)
+  elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
+    link_directories(${CMAKE_CURRENT_LIST_DIR}/oshw/win32/wpcap/Lib)
+  endif()
+  if(MSVC)  
+    message(STATUS "Win32 MSVC")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /D _CRT_SECURE_NO_WARNINGS")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}  /WX")
+  else()
+    message(STATUS "Win32 non-MSVC")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror")
+  endif()
+  set(OS_LIBS wpcap.lib Packet.lib Ws2_32.lib Winmm.lib)
+elseif(UNIX AND NOT APPLE)
+  set(OS "linux")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror")
+  set(OS_LIBS pthread rt)
+elseif(APPLE)
+  # This must come *before* linux or MacOSX will identify as Unix.
+  set(OS "macosx")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror")
+  set(OS_LIBS pthread pcap)
+elseif(${CMAKE_SYSTEM_NAME} MATCHES "rt-kernel")
+  set(OS "rtk")
+  message(STATUS "ARCH is ${ARCH}")
+  message(STATUS "BSP is ${BSP}")
+  include_directories(oshw/${OS}/${ARCH})
+  file(GLOB OSHW_EXTRA_SOURCES oshw/${OS}/${ARCH}/*.c)
+  set(OSHW_SOURCES "${OS_HW_SOURCES} ${OSHW_ARCHSOURCES}")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-but-set-variable")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-format")
+  set(OS_LIBS "-Wl,--start-group -l${BSP} -l${ARCH} -lkern -ldev -lsio -lblock -lfs -lusb -llwip -leth -li2c -lrtc -lcan -lnand -lspi -lnor -lpwm -ladc -ltrace -lc -lm -Wl,--end-group")
+elseif(${CMAKE_SYSTEM_NAME} MATCHES "rtems")
+  message(STATUS "Building for RTEMS")
+  set(OS "rtems")
+  set(SOEM_LIB_INSTALL_DIR ${LIB_DIR})
+  set(BUILD_TESTS FALSE)
+endif()
 
-# Define executable
-#add_executable(soem_app main.c)
-#
-### Link SOEM
-##target_link_libraries(soem_app PRIVATE soem)
-## Link your app
-#target_link_libraries(soem_app PRIVATE
-#        soem
-#        pthread           # SOEM on Linux typically needs pthread
-#        # rt              # uncomment if you get unresolved clock_* / timer_* symbols
-#        # pcap            # only if you use the PCAP NIC backend
-#)
+message(STATUS "OS is ${OS}")
 
-add_executable(simple_test simple_test.c)
+file(GLOB SOEM_SOURCES soem/*.c)
+file(GLOB OSAL_SOURCES osal/${OS}/*.c)
+file(GLOB OSHW_SOURCES oshw/${OS}/*.c)
 
-# SOEM headers inside raisin (so ethercat.h resolves)
-# SOEM headers (add the linux OSAL folder!)
-target_include_directories(simple_test PRIVATE
-        "${RAISIN_ROOT}/src/raisin/soem/soem"        # ethercat.h, etc.
-        "${RAISIN_ROOT}/src/raisin/soem/osal"
-        "${RAISIN_ROOT}/src/raisin/soem/osal/linux"  # <— THIS fixes osal_defs.h
-        "${RAISIN_ROOT}/src/raisin/soem/oshw/linux"
-)
+file(GLOB SOEM_HEADERS soem/*.h)
+file(GLOB OSAL_HEADERS osal/osal.h osal/${OS}/*.h)
+file(GLOB OSHW_HEADERS oshw/${OS}/*.h)
 
-target_link_libraries(simple_test PRIVATE
-        "${SOEM_LIB}"
-        pthread
-        rt              # needed on some systems for clock_* APIs
-        # pcap          # only if you built SOEM with the PCAP backend
-)
+add_library(soem STATIC
+  ${SOEM_SOURCES}
+  ${OSAL_SOURCES}
+  ${OSHW_SOURCES}
+  ${OSHW_EXTRA_SOURCES})
+target_link_libraries(soem ${OS_LIBS})
 
-# Add slaveinfo.c to the build
-add_executable(slaveinfo slaveinfo.c)
+target_include_directories(soem PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/soem>
+  $<INSTALL_INTERFACE:include/soem>)
 
-target_include_directories(slaveinfo PRIVATE
-        "${RAISIN_ROOT}/src/raisin/soem/soem"
-        "${RAISIN_ROOT}/src/raisin/soem/osal"
-        "${RAISIN_ROOT}/src/raisin/soem/osal/linux"
-        "${RAISIN_ROOT}/src/raisin/soem/oshw/linux"
-)
+target_include_directories(soem PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/osal>
+  $<INSTALL_INTERFACE:include/soem>)
 
-target_link_libraries(slaveinfo PRIVATE
-        "${SOEM_LIB}"
-        pthread
-        rt
-)
+target_include_directories(soem PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/osal/${OS}>
+  $<INSTALL_INTERFACE:include/soem>)
 
+target_include_directories(soem
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/oshw/${OS}>
+  $<INSTALL_INTERFACE:include/soem>
+  )
 
-# Add simple_test_XMC.c to the build
-add_executable(simple_test_XMC simple_test_XMC.c)
+message(STATUS "LIB_DIR: ${SOEM_LIB_INSTALL_DIR}")
 
-target_include_directories(simple_test_XMC PRIVATE
-        "${RAISIN_ROOT}/src/raisin/soem/soem"
-        "${RAISIN_ROOT}/src/raisin/soem/osal"
-        "${RAISIN_ROOT}/src/raisin/soem/osal/linux"
-        "${RAISIN_ROOT}/src/raisin/soem/oshw/linux"
-)
+install(TARGETS soem EXPORT soemConfig DESTINATION ${SOEM_LIB_INSTALL_DIR})
 
-target_link_libraries(simple_test_XMC PRIVATE
-        "${SOEM_LIB}"
-        pthread
-        rt
-)
+install(EXPORT soemConfig DESTINATION share/soem/cmake)
 
+install(FILES
+  ${SOEM_HEADERS}
+  ${OSAL_HEADERS}
+  ${OSHW_HEADERS}
+  DESTINATION ${SOEM_INCLUDE_INSTALL_DIR})
 
+add_subdirectory(test/linux/slaveinfo)
 
-
-
-# Add simple_test_dongdrive.c to the build
-add_executable(simple_test_dongdrive simple_test_dongdrive.c)
-
-target_include_directories(simple_test_dongdrive PRIVATE
-        "${RAISIN_ROOT}/src/raisin/soem/soem"
-        "${RAISIN_ROOT}/src/raisin/soem/osal"
-        "${RAISIN_ROOT}/src/raisin/soem/osal/linux"
-        "${RAISIN_ROOT}/src/raisin/soem/oshw/linux"
-)
-
-target_link_libraries(simple_test_dongdrive PRIVATE
-        "${SOEM_LIB}"
-        pthread
-        rt
-)
+if(BUILD_TESTS) 
+  add_subdirectory(test/simple_ng)
+  add_subdirectory(test/linux/eepromtool)
+  add_subdirectory(test/linux/simple_test)
+endif()

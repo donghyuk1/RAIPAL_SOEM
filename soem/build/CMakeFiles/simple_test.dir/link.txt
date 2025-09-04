@@ -1,1 +1,0 @@
-/usr/bin/cc CMakeFiles/simple_test.dir/simple_test.c.o -o simple_test  /home/dongghk/Desktop/raisin_ws/raisin_master/build/src/raisin/soem/libsoem.a -lpthread -lrt

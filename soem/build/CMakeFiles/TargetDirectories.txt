@@ -1,6 +1,0 @@
-/home/dongghk/workspace/ARM/soem/build/CMakeFiles/simple_test.dir
-/home/dongghk/workspace/ARM/soem/build/CMakeFiles/slaveinfo.dir
-/home/dongghk/workspace/ARM/soem/build/CMakeFiles/simple_test_XMC.dir
-/home/dongghk/workspace/ARM/soem/build/CMakeFiles/simple_test_dongdrive.dir
-/home/dongghk/workspace/ARM/soem/build/CMakeFiles/edit_cache.dir
-/home/dongghk/workspace/ARM/soem/build/CMakeFiles/rebuild_cache.dir
