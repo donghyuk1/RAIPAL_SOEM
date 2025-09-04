@@ -1,0 +1,1 @@
+/usr/bin/cc CMakeFiles/simple_test_dongdrive.dir/simple_test_dongdrive.c.o -o simple_test_dongdrive  /home/dongghk/Desktop/raisin_ws/raisin_master/build/src/raisin/soem/libsoem.a -lpthread -lrt

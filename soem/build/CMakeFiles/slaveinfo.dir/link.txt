@@ -1,0 +1,1 @@
+/usr/bin/cc CMakeFiles/slaveinfo.dir/slaveinfo.c.o -o slaveinfo  /home/dongghk/Desktop/raisin_ws/raisin_master/build/src/raisin/soem/libsoem.a -lpthread -lrt

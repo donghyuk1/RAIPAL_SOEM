@@ -1,0 +1,87 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"jsonFile" : "directory-.-Debug-f5ebdc15457944623624.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.30"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "soem_example",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "simple_test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-simple_test-Debug-c2c0ff76a2ade9116ebc.json",
+					"name" : "simple_test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "simple_test_XMC::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-simple_test_XMC-Debug-8fe7e9dac84e4d81c836.json",
+					"name" : "simple_test_XMC",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "simple_test_dongdrive::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-simple_test_dongdrive-Debug-9b41efac6052b414dbf1.json",
+					"name" : "simple_test_dongdrive",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "slaveinfo::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-slaveinfo-Debug-1a74b531918d3945bcfd.json",
+					"name" : "slaveinfo",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/home/dongghk/workspace/ARM/soem/cmake-build-debug",
+		"source" : "/home/dongghk/workspace/ARM/soem"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 7
+	}
+}

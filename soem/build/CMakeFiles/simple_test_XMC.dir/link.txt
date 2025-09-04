@@ -1,0 +1,1 @@
+/usr/bin/cc CMakeFiles/simple_test_XMC.dir/simple_test_XMC.c.o -o simple_test_XMC  /home/dongghk/Desktop/raisin_ws/raisin_master/build/src/raisin/soem/libsoem.a -lpthread -lrt
