@@ -475,7 +475,7 @@ static void simpletest(const char *ifname)
                 // desired_outputs.mode_of_operation = MODE_PROFILE_COMMUTATION;
 
                 desired_outputs.controlword = CONTROLWORD_ENABLE_OPERATION;    // 0x0F
-                desired_outputs.target_torque = 200;
+                desired_outputs.target_torque = 100;
             }
 
 

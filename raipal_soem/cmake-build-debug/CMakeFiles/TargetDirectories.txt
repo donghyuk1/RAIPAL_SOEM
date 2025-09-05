@@ -1,3 +1,5 @@
+/home/dongghk/workspace/ARM/raipal_soem/cmake-build-debug/CMakeFiles/raipal_core.dir
+/home/dongghk/workspace/ARM/raipal_soem/cmake-build-debug/CMakeFiles/demo.dir
 /home/dongghk/workspace/ARM/raipal_soem/cmake-build-debug/CMakeFiles/simple_test.dir
 /home/dongghk/workspace/ARM/raipal_soem/cmake-build-debug/CMakeFiles/slaveinfo.dir
 /home/dongghk/workspace/ARM/raipal_soem/cmake-build-debug/CMakeFiles/simple_test_XMC.dir

@@ -1,1 +1,33 @@
+# ---- Build directories ----
 **/build/
+**/cmake-build-*/
+
+# ---- CMake generated files ----
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+install_manifest.txt
+compile_commands.json
+
+# ---- IDE / Editor specific ----
+# CLion / JetBrains
+.idea/
+# VSCode
+.vscode/
+# Xcode
+*.xcworkspace
+*.xcodeproj
+# Eclipse
+.project
+.cproject
+.settings/
+
+# ---- OS junk files ----
+.DS_Store
+Thumbs.db
+
+# ---- Logs / temp ----
+*.log
+*.swp
+*.swo

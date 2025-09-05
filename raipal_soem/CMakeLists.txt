@@ -1,113 +1,98 @@
-#cmake_minimum_required(VERSION 3.30)
-#project(soem_example)
 #
-#set(CMAKE_CXX_STANDARD 20)
-#set(RAISIN_ROOT "$ENV{HOME}/Desktop/raisin_ws/raisin_master")
-#set(RAISIN_BUILD "$ENV{HOME}/Desktop/raisin_ws/raisin_master/build")
-#set(SOEM_LIB "${RAISIN_BUILD}/src/raisin/soem/libsoem.a")
+#cmake_minimum_required(VERSION 3.16)
+#project(soem_example C)
+#set(CMAKE_C_STANDARD 11)
 #
-#add_library(soem STATIC IMPORTED GLOBAL)
-#set_target_properties(soem PROPERTIES
-#        IMPORTED_LOCATION "${SOEM_LIB}"
-#        INTERFACE_INCLUDE_DIRECTORIES
-#        "${RAISIN_ROOT}/src/raisin/soem/soem;${RAISIN_ROOT}/src/raisin/soem/osal;${RAISIN_ROOT}/src/raisin/soem/oshw/linux"
-#)
+## Find the installed SOEM package (lowercase)
+#find_package(soem CONFIG REQUIRED) # looks for soemConfig.cmake
 #
-## Add path to SOEM's cmake config
-#list(APPEND CMAKE_PREFIX_PATH "$ENV{HOME}/Desktop/SOEM-install/cmake")
+## Common link libs (raw-socket backend on Linux)
+#set(COMMON_LINK_LIBS soem pthread rt)
+## If you built SOEM with pcap backend, also:
+## list(APPEND COMMON_LINK_LIBS pcap)
 #
-#add_executable(simple_test simple_test.c)
+#add_executable(simple_test            src/simple_test.c)
+#target_link_libraries(simple_test     PRIVATE ${COMMON_LINK_LIBS})
 #
-## SOEM headers inside raisin (so ethercat.h resolves)
-## SOEM headers (add the linux OSAL folder!)
-#target_include_directories(simple_test PRIVATE
-#        "${RAISIN_ROOT}/src/raisin/soem/soem"        # ethercat.h, etc.
-#        "${RAISIN_ROOT}/src/raisin/soem/osal"
-#        "${RAISIN_ROOT}/src/raisin/soem/osal/linux"  # <— THIS fixes osal_defs.h
-#        "${RAISIN_ROOT}/src/raisin/soem/oshw/linux"
-#)
+#add_executable(slaveinfo              src/slaveinfo.c)
+#target_link_libraries(slaveinfo       PRIVATE ${COMMON_LINK_LIBS})
 #
-#target_link_libraries(simple_test PRIVATE
-#        "${SOEM_LIB}"
-#        pthread
-#        rt              # needed on some systems for clock_* APIs
-#        # pcap          # only if you built SOEM with the PCAP backend
-#)
+#add_executable(simple_test_XMC        src/simple_test_XMC.c)
+#target_link_libraries(simple_test_XMC PRIVATE ${COMMON_LINK_LIBS})
 #
-## Add slaveinfo.c to the build
-#add_executable(slaveinfo slaveinfo.c)
-#
-#target_include_directories(slaveinfo PRIVATE
-#        "${RAISIN_ROOT}/src/raisin/soem/soem"
-#        "${RAISIN_ROOT}/src/raisin/soem/osal"
-#        "${RAISIN_ROOT}/src/raisin/soem/osal/linux"
-#        "${RAISIN_ROOT}/src/raisin/soem/oshw/linux"
-#)
-#
-#target_link_libraries(slaveinfo PRIVATE
-#        "${SOEM_LIB}"
-#        pthread
-#        rt
-#)
-#
-#
-## Add simple_test_XMC.c to the build
-#add_executable(simple_test_XMC simple_test_XMC.c)
-#
-#target_include_directories(simple_test_XMC PRIVATE
-#        "${RAISIN_ROOT}/src/raisin/soem/soem"
-#        "${RAISIN_ROOT}/src/raisin/soem/osal"
-#        "${RAISIN_ROOT}/src/raisin/soem/osal/linux"
-#        "${RAISIN_ROOT}/src/raisin/soem/oshw/linux"
-#)
-#
-#target_link_libraries(simple_test_XMC PRIVATE
-#        "${SOEM_LIB}"
-#        pthread
-#        rt
-#)
-#
-#
-#
-#
-#
-## Add simple_test_dongdrive.c to the build
-#add_executable(simple_test_dongdrive simple_test_dongdrive.c)
-#
-#target_include_directories(simple_test_dongdrive PRIVATE
-#        "${RAISIN_ROOT}/src/raisin/soem/soem"
-#        "${RAISIN_ROOT}/src/raisin/soem/osal"
-#        "${RAISIN_ROOT}/src/raisin/soem/osal/linux"
-#        "${RAISIN_ROOT}/src/raisin/soem/oshw/linux"
-#)
-#
-#target_link_libraries(simple_test_dongdrive PRIVATE
-#        "${SOEM_LIB}"
-#        pthread
-#        rt
-#)
-
+#add_executable(simple_test_dongdrive  src/simple_test_dongdrive.c)
+#target_link_libraries(simple_test_dongdrive PRIVATE ${COMMON_LINK_LIBS})
 
 cmake_minimum_required(VERSION 3.16)
-project(soem_example C)
+project(raipal_soem_app LANGUAGES C CXX)
+
+# Standards
 set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
 
-# Find the installed SOEM package (lowercase)
-find_package(soem CONFIG REQUIRED) # looks for soemConfig.cmake
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Common link libs (raw-socket backend on Linux)
+# Find the installed SOEM package (lowercase name per your SOEM CMake)
+find_package(soem CONFIG REQUIRED)  # looks for soemConfig.cmake
+
+# Common link libs for Linux raw-socket backend
 set(COMMON_LINK_LIBS soem pthread rt)
-# If you built SOEM with pcap backend, also:
+# If you built SOEM with PCAP backend, uncomment:
 # list(APPEND COMMON_LINK_LIBS pcap)
 
-add_executable(simple_test            src/simple_test.c)
-target_link_libraries(simple_test     PRIVATE ${COMMON_LINK_LIBS})
+# Include path for your public headers (if you have any)
+# e.g., raipal_soem/include/{*.hpp}
+set(RAIPAL_PUBLIC_INCLUDE "${CMAKE_CURRENT_LIST_DIR}/include")
 
-add_executable(slaveinfo              src/slaveinfo.c)
-target_link_libraries(slaveinfo       PRIVATE ${COMMON_LINK_LIBS})
+# ============== C++ core library (your new modular code) =====================
+# Files below are examples; adjust to your actual files
+add_library(raipal_core STATIC
+        src/ethercat_master.cpp
+        src/ethercat_slave.cpp
+        src/ethercat_actuator.cpp
+)
+target_include_directories(raipal_core
+        PUBLIC
+        ${RAIPAL_PUBLIC_INCLUDE}
+)
 
-add_executable(simple_test_XMC        src/simple_test_XMC.c)
-target_link_libraries(simple_test_XMC PRIVATE ${COMMON_LINK_LIBS})
+#target_link_libraries(raipal_core PRIVATE ${COMMON_LINK_LIBS})
+target_link_libraries(raipal_core
+        PUBLIC  soem        # make SOEM public so <ethercat.h> is visible to dependents
+        PRIVATE pthread rt  # keep system libs private
+)
 
-add_executable(simple_test_dongdrive  src/simple_test_dongdrive.c)
-target_link_libraries(simple_test_dongdrive PRIVATE ${COMMON_LINK_LIBS})
+
+
+# ============== C++ demo that uses the new library ===========================
+# Optional: only if you have a C++ main
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/main.cpp")
+    add_executable(demo src/main.cpp)
+    target_link_libraries(demo PRIVATE raipal_core)
+endif()
+
+# ============== Legacy C test executables (unchanged) ========================
+# All your C test files reside in raipal_soem/src
+# Build them as pure C executables and link to SOEM/system libs.
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/simple_test.c")
+    add_executable(simple_test src/simple_test.c)
+    target_link_libraries(simple_test PRIVATE ${COMMON_LINK_LIBS})
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/slaveinfo.c")
+    add_executable(slaveinfo src/slaveinfo.c)
+    target_link_libraries(slaveinfo PRIVATE ${COMMON_LINK_LIBS})
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/simple_test_XMC.c")
+    add_executable(simple_test_XMC src/simple_test_XMC.c)
+    target_link_libraries(simple_test_XMC PRIVATE ${COMMON_LINK_LIBS})
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/simple_test_dongdrive.c")
+    add_executable(simple_test_dongdrive src/simple_test_dongdrive.c)
+    target_link_libraries(simple_test_dongdrive PRIVATE ${COMMON_LINK_LIBS})
+endif()

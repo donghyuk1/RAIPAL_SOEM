@@ -1,4 +1,3 @@
 # ninja log v6
-0	10	1756972653400186599	build.ninja	30e8454d6cf39ded
+0	10	1756993291485294375	build.ninja	30e8454d6cf39ded
 21	33	1755441981433431681	simple_test	dbe9b4afbf47fe23
-0	21	1755441981412431569	CMakeFiles/simple_test.dir/simple_test.c.o	202a2028d57bfe0c
