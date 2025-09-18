@@ -1,27 +1,3 @@
-#
-#cmake_minimum_required(VERSION 3.16)
-#project(soem_example C)
-#set(CMAKE_C_STANDARD 11)
-#
-## Find the installed SOEM package (lowercase)
-#find_package(soem CONFIG REQUIRED) # looks for soemConfig.cmake
-#
-## Common link libs (raw-socket backend on Linux)
-#set(COMMON_LINK_LIBS soem pthread rt)
-## If you built SOEM with pcap backend, also:
-## list(APPEND COMMON_LINK_LIBS pcap)
-#
-#add_executable(simple_test            src/simple_test.c)
-#target_link_libraries(simple_test     PRIVATE ${COMMON_LINK_LIBS})
-#
-#add_executable(slaveinfo              src/slaveinfo.c)
-#target_link_libraries(slaveinfo       PRIVATE ${COMMON_LINK_LIBS})
-#
-#add_executable(simple_test_XMC        src/simple_test_XMC.c)
-#target_link_libraries(simple_test_XMC PRIVATE ${COMMON_LINK_LIBS})
-#
-#add_executable(simple_test_dongdrive  src/simple_test_dongdrive.c)
-#target_link_libraries(simple_test_dongdrive PRIVATE ${COMMON_LINK_LIBS})
 
 cmake_minimum_required(VERSION 3.16)
 project(raipal_soem_app LANGUAGES C CXX)
@@ -34,6 +10,9 @@ set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Add ~/.local to package search path
+list(APPEND CMAKE_PREFIX_PATH "$ENV{HOME}/.local")
 
 # Find the installed SOEM package (lowercase name per your SOEM CMake)
 find_package(soem CONFIG REQUIRED)  # looks for soemConfig.cmake
