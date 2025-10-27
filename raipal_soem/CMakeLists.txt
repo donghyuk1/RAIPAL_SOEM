@@ -75,3 +75,17 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/simple_test_dongdrive.c")
     add_executable(simple_test_dongdrive src/simple_test_dongdrive.c)
     target_link_libraries(simple_test_dongdrive PRIVATE ${COMMON_LINK_LIBS})
 endif()
+
+# ============== ADDITION: handle sensor.py ==============================
+set(SENSOR_PY "${CMAKE_CURRENT_SOURCE_DIR}/src/sensor.py")
+if(EXISTS "${SENSOR_PY}")
+    add_custom_command(
+        TARGET raipal_core POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${SENSOR_PY}"
+                "${CMAKE_CURRENT_BINARY_DIR}/sensor.py"
+        COMMENT "Copying sensor.py to build directory"
+    )
+    install(FILES "${SENSOR_PY}" DESTINATION bin)
+endif()
+

@@ -442,6 +442,8 @@ static void simpletest(const char *ifname)
         ControlPhase control_phase = PHASE_SWITCH_ON;
         SlaveInputData slave_input_data;
 
+		FILE *f = fopen("/tmp/input_data.txt", "w");
+
         // cyclic loop
         for (int i = 1; i <= 10000; i++)
         {
@@ -456,6 +458,10 @@ static void simpletest(const char *ifname)
             {
                 print_process_data(i, wkc, expectedWKC, oloop, iloop, SLAVE_IDX);
                 read_slave_input_data(SLAVE_IDX, &slave_input_data);
+                                        
+				fprintf(f, "%u\n", slave_input_data.statusword); 
+				fflush(f);
+                
                 needlf = TRUE;
             }
 
@@ -482,6 +488,8 @@ static void simpletest(const char *ifname)
 
             osal_usleep(PRINT_PERIOD_US);
         }
+
+		fclose(f);
 
         inOP = FALSE;
     }
