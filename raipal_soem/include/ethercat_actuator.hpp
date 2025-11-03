@@ -32,15 +32,22 @@ struct ActuatorPDOMap {
 };
 
 // ---- Modes & controlwords ----
-enum Mode : uint8_t {
-  NO_MODE = 0x00,
-  CSP     = 0x08,
-  CSV     = 0x09,
-  CST     = 0x0A,
-  COMM    = 0x0F,
+// ---- Modes of Operation ----
+enum ModeOfOperation : uint8_t {
+  MODE_NO_MODE                        = 0x00,
+  MODE_PROFILE_POSITION               = 0x01,
+  MODE_PROFILE_VELOCITY               = 0x03,
+  MODE_PROFILE_TORQUE                 = 0x04,
+  MODE_HOMING                         = 0x06,
+  MODE_INTERPOLATION_POSITION         = 0x07,
+  MODE_CYCLIC_SYNCHRONOUS_POSITION    = 0x08,
+  MODE_CYCLIC_SYNCHRONOUS_VELOCITY    = 0x09,
+  MODE_CYCLIC_SYNCHRONOUS_TORQUE      = 0x0A,
+  MODE_PROFILE_COMMUTATION            = 0x0F
 };
 
 enum ControlWord : uint8_t {
+  CW_ZERO              = 0x00,
   CW_SHUTDOWN          = 0x06,
   CW_SWITCH_ON         = 0x07,
   CW_ENABLE_OPERATION  = 0x0F,

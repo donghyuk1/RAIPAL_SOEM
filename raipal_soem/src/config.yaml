@@ -1,0 +1,27 @@
+# config.yaml
+
+# --------------------------------------------------
+# List of modes
+# --------------------------------------------------
+# MODE_NO_MODE                        = 0x00,
+# MODE_PROFILE_POSITION               = 0x01,
+# MODE_PROFILE_VELOCITY               = 0x03,
+# MODE_PROFILE_TORQUE                 = 0x04,
+# MODE_HOMING                         = 0x06,
+# MODE_INTERPOLATION_POSITION         = 0x07,
+# MODE_CYCLIC_SYNCHRONOUS_POSITION    = 0x08,
+# MODE_CYCLIC_SYNCHRONOUS_VELOCITY    = 0x09,
+# MODE_CYCLIC_SYNCHRONOUS_TORQUE      = 0x0A,
+# MODE_PROFILE_COMMUTATION            = 0x0F
+
+- name: joint_1
+  mode: 9
+  target_torque: 200
+  target_velocity: 500000
+  target_position: 0
+
+- name: joint_2
+  mode: 9
+  target_torque: 200
+  target_velocity: 500000
+  target_position: 0

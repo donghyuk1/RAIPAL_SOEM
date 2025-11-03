@@ -51,7 +51,15 @@ target_link_libraries(raipal_core
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/main.cpp")
     add_executable(demo src/main.cpp)
     target_link_libraries(demo PRIVATE raipal_core)
+    target_link_libraries(demo PRIVATE yaml-cpp)
 endif()
+
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/actuator_test.cpp")
+    add_executable(actuator_test src/actuator_test.cpp)
+    target_link_libraries(actuator_test PRIVATE raipal_core)
+    target_link_libraries(actuator_test PRIVATE yaml-cpp)
+endif()
+
 
 # ============== Legacy C test executables (unchanged) ========================
 # All your C test files reside in raipal_soem/src

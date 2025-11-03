@@ -1,4 +1,4 @@
-/home/dongg/Downloads/clion-2025.2.1/bin/cmake/linux/x64/bin/cmake -DCMAKE_BUILD_TYPE=Debug -G "Unix Makefiles" -S /home/dongg/workspace/RAIPAL_SOEM/raipal_soem -B /home/dongg/workspace/RAIPAL_SOEM/raipal_soem/cmake-build-debug
+/home/dongghk/Downloads/clion-2024.3.5/bin/cmake/linux/x64/bin/cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MAKE_PROGRAM=/home/dongghk/Downloads/clion-2024.3.5/bin/ninja/linux/x64/ninja -G Ninja -S /home/dongghk/workspace/ARM/raipal_soem -B /home/dongghk/workspace/ARM/raipal_soem/cmake-build-debug
 -- The C compiler identification is GNU 11.4.0
 -- The CXX compiler identification is GNU 11.4.0
 -- Detecting C compiler ABI info
@@ -11,17 +11,6 @@
 -- Check for working CXX compiler: /usr/bin/c++ - skipped
 -- Detecting CXX compile features
 -- Detecting CXX compile features - done
-CMake Error at CMakeLists.txt:15 (find_package):
-  Could not find a package configuration file provided by "soem" with any of
-  the following names:
-
-    soemConfig.cmake
-    soem-config.cmake
-
-  Add the installation prefix of "soem" to CMAKE_PREFIX_PATH or set
-  "soem_DIR" to a directory containing one of the above files.  If "soem"
-  provides a separate development package or SDK, be sure it has been
-  installed.
-
-
--- Configuring incomplete, errors occurred!
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/dongghk/workspace/ARM/raipal_soem/cmake-build-debug
