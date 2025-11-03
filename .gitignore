@@ -12,7 +12,7 @@ compile_commands.json
 
 # ---- IDE / Editor specific ----
 # CLion / JetBrains
-.idea/
+**/.idea/
 # VSCode
 .vscode/
 # Xcode
