@@ -83,3 +83,6 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/simple_test_dongdrive.c")
     add_executable(simple_test_dongdrive src/simple_test_dongdrive.c)
     target_link_libraries(simple_test_dongdrive PRIVATE ${COMMON_LINK_LIBS})
 endif()
+
+
+add_executable(server socket-test/server.cpp)

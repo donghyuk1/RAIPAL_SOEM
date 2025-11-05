@@ -15,13 +15,14 @@
 # MODE_PROFILE_COMMUTATION            = 0x0F
 
 - name: joint_1
-  mode: 9
-  target_torque: 200
-  target_velocity: 500000
-  target_position: 0
+  mode: 10
+  target_torque: -20
+  target_velocity: 10000
+  target_position: 100000
 
-- name: joint_2
-  mode: 9
-  target_torque: 200
-  target_velocity: 500000
-  target_position: 0
+#
+#- name: joint_2
+#  mode: 9
+#  target_torque: 200
+#  target_velocity: 500000
+#  target_position: 0
