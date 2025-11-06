@@ -11,10 +11,37 @@
 #include <iostream>
 #include <string>
 
+#include <cstdint>
+#include <cmath>
+#include <tuple>
+
+std::tuple<double, uint16_t, uint16_t> parse_frame(const uint8_t frame[6], int torque_decimal)
+{
+    // Combine D1, D2 → torque_raw
+    uint16_t torque_raw_val = (frame[0] << 8) | frame[1];
+    double torque_raw = torque_raw_val * std::pow(0.1, torque_decimal);
+    torque_raw = std::round(torque_raw * std::pow(10, torque_decimal)) / std::pow(10, torque_decimal);
+
+    // Combine D3, D4 → speed_raw (lowest 15 bits only)
+    uint16_t speed_raw = ((frame[2] & 0x7F) << 8) | frame[3];
+
+    // CRC from D5, D6
+    uint16_t crc = (frame[4] << 8) | frame[5];
+
+    // Check torque sign (D3 MSB)
+    bool torque_sign = frame[2] & 0x80;
+    double torque = torque_sign ? -torque_raw : torque_raw;
+
+    return std::make_tuple(torque, speed_raw, crc);
+}
+
 int main() {
     ::signal(SIGPIPE, SIG_IGN);
 
     const int PORT = 8080;
+    const size_t FRAME_SIZE = 6;
+    int torque_decimal = 1;
+    
     int listen_fd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (listen_fd < 0) { std::perror("socket"); return 1; }
 
@@ -55,13 +82,24 @@ int main() {
         if (n > 0) {
             pending.append(buf, buf + n);
             std::size_t pos;
-            while ((pos = pending.find('\n')) != std::string::npos) {
-                std::string line = pending.substr(0, pos);
-                // drop optional '\r'
-                if (!line.empty() && line.back() == '\r') line.pop_back();
-                std::cout << "[server] received: " << line << std::endl;
-                pending.erase(0, pos + 1);
-            }
+            // Instead of '\n'-delimited, accumulate until FRAME_SIZE bytes in 'pending'
+			while (pending.size() >= FRAME_SIZE) {
+				uint8_t frame[FRAME_SIZE];
+                std::memcpy(frame, pending.data(), FRAME_SIZE);
+                pending.erase(pending.begin(), pending.begin() + FRAME_SIZE);
+                
+				std::cout << "[server] received: ";
+				for (unsigned char c : frame) {
+					printf("%02X ", c);
+				}
+				std::cout << std::endl;
+				pending.erase(0, FRAME_SIZE);
+				auto [torque, speed, crc] = parse_frame(frame, torque_decimal);
+
+				std::cout << "Torque: " << torque << " Nm\n";
+				std::cout << "Speed: " << speed << " RPM\n";
+				std::cout << "CRC: 0x" << std::hex << crc << std::dec << "\n";
+			}
         } else if (n == 0) {
             std::cout << "Client disconnected.\n";
             break;
