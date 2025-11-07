@@ -143,16 +143,7 @@ int main(int argc, char** argv) {
                         cmds[k].controlword = CW_ENABLE_OPERATION;
                         cmds[k].mode        = cfg[k].mode;
 
-                        // switch (cfg[k].mode) {
-                        //     case CST: cmds[k].target_tor = cfg[k].target_torque;   break;
-                        //     case CSV: cmds[k].target_vel = cfg[k].target_velocity; break;
-                        //     case CSP: cmds[k].target_pos = cfg[k].target_position; break;
-                        //     // case MODE_PROFILE_TORQUE:   cmds[k].target_tor = cfg[k].target_torque;   break;
-                        //     // case MODE_PROFILE_VELOCITY: cmds[k].target_vel = cfg[k].target_velocity; break;
-                        //     // case MODE_PROFILE_POSITION: cmds[k].target_pos = cfg[k].target_position; break;
-                        //     // case MODE_HOMING: /* vendor-specific handling if needed */ break;
-                        //     default: break;
-                        // }
+
                         switch (cfg[k].mode) {
                             case MODE_CYCLIC_SYNCHRONOUS_TORQUE:
                                 cmds[k].target_tor = cfg[k].target_torque; break;

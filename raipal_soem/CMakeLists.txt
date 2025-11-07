@@ -60,6 +60,12 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/actuator_test.cpp")
     target_link_libraries(actuator_test PRIVATE yaml-cpp)
 endif()
 
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/check_backlash.cpp")
+    add_executable(backlash_test src/check_backlash.cpp)
+    target_link_libraries(backlash_test PRIVATE raipal_core)
+    target_link_libraries(backlash_test PRIVATE yaml-cpp)
+endif()
+
 
 # ============== Legacy C test executables (unchanged) ========================
 # All your C test files reside in raipal_soem/src
