@@ -89,7 +89,7 @@ static std::vector<actuator_cfg_t> load_cfg(const char* yaml_path, int expected_
     return v;
 }
 
-// ---------- State machine for the 4-stage cycle ----------
+// ---------- State machine for the 2-stage cycle ----------
 enum class Stage {
     VELOCITY_FWD = 0,
     VELOCITY_REV = 1,

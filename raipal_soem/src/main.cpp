@@ -49,19 +49,20 @@ struct actuator_cfg_t {
 // UPDATE: load YAML, assert size == slave_count
 static std::vector<actuator_cfg_t> load_cfg(const char* yaml_path, int expected_size) {
     YAML::Node root = YAML::LoadFile(yaml_path);
-    if (!root.IsSequence()) {
-        std::fprintf(stderr, "Config error: top-level must be a sequence\n");
+    YAML::Node actuators_node = root["actuators"];
+    if (!actuators_node.IsSequence()) {
+        std::fprintf(stderr, "Config error: 'actuators' key must be a sequence\n");
         std::exit(2);
     }
-    if (static_cast<int>(root.size()) != expected_size) {
-        std::fprintf(stderr, "Config error: YAML entries (%zu) != slave count (%d)\n",
-                     root.size(), expected_size);
+    if (static_cast<int>(actuators_node.size()) != expected_size) {
+        std::fprintf(stderr, "Config error: YAML entries in 'actuators' (%zu) != slave count (%d)\n",
+                     actuators_node.size(), expected_size);
         std::exit(3);
     }
     std::vector<actuator_cfg_t> v;
-    v.reserve(root.size());
-    for (size_t i = 0; i < root.size(); ++i) {
-        const auto& n = root[i];
+    v.reserve(actuators_node.size());
+    for (size_t i = 0; i < actuators_node.size(); ++i) {
+        const auto& n = actuators_node[i];
         actuator_cfg_t c{};
         c.name            = n["name"]            ? n["name"].as<std::string>() : ("slave_" + std::to_string(i+1));
         // c.mode            = n["mode"]            ? parse_mode(n["mode"].as<std::string>()) : CST;
