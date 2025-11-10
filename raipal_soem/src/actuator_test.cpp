@@ -101,6 +101,7 @@ struct BacklashTestConfig {
     int N                           = 10;
     int position_error_threshold    = 500;
     int position_error_timeout_ms   = 10000;
+    int position_zero_error_timeout_ms = 100000;
     int measure_time_s              = 3;
     std::string csv_path            = "backlash_results.csv";
     int slave_id                    = 1; // optional selector
@@ -123,6 +124,7 @@ static BacklashTestConfig load_backlash_cfg(const char* yaml_path) {
             if (s["N"])                         cfg.N  = s["N"].as<int>();
             if (s["position_error_threshold"])  cfg.position_error_threshold = s["position_error_threshold"].as<int>();
             if (s["position_error_timeout_ms"]) cfg.position_error_timeout_ms = s["position_error_timeout_ms"].as<int>();
+            if (s["position_zero_error_timeout_ms"]) cfg.position_zero_error_timeout_ms = s["position_zero_error_timeout_ms"].as<int>();
             if (s["measure_time_s"])            cfg.measure_time_s = s["measure_time_s"].as<int>();
             if (s["csv_path"])                  cfg.csv_path = s["csv_path"].as<std::string>();
             if (s["slave_id"])                  cfg.slave_id = s["slave_id"].as<int>();

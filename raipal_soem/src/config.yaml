@@ -39,6 +39,7 @@ backlash_sweep:
   N: 12                   # number of positions
   position_error_threshold: 1000   # counts
   position_error_timeout_ms: 40000 # timeout in ms
+  position_zero_error_timeout_ms: 100000 # timeout to zero pos in ms
   measure_time_s: 2       # seconds per position
   csv_path: "../output/backlash_results-test.csv"   # optional; default "backlash_results.csv"
 
