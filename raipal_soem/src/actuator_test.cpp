@@ -189,7 +189,7 @@ static bool wait_until_at_position(EthercatMaster& master,
                                    int threshold,
                                    int timeout_ms,
                                    std::chrono::microseconds period,
-                                   int stable_required = 100)
+                                   int stable_required = 200)
 {
     cmd.mode = MODE_CYCLIC_SYNCHRONOUS_POSITION;
     cmd.target_pos = target_pos;
@@ -210,7 +210,17 @@ static bool wait_until_at_position(EthercatMaster& master,
             }
             int err = std::abs(fb.pos - target_pos);
             if (err < threshold){
-                if (++stable >= stable_required) return true;
+                if (++stable >= stable_required)
+                {
+                    cmd.mode        = MODE_CYCLIC_SYNCHRONOUS_TORQUE;
+                    cmd.controlword = CW_ENABLE_OPERATION;
+                    cmd.target_tor  = 0;
+
+                    act.writeCommand(cmd);
+                    master.tickOnce();
+
+                    return true;
+                }
             }else{
                 stable = 0;
             }
