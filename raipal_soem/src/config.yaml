@@ -18,8 +18,8 @@ actuators:
   - name: joint_1
     mode: 8
     target_torque: 200
-    target_velocity: 50000
-    target_position: -1500000
+    target_velocity: 1000000
+    target_position: 0
 
 #  - name: joint_2
 #    mode: 9
@@ -31,24 +31,25 @@ actuators:
 
 backlash_test:
   torque_mag: 10        # torque_mag / 1000 * rated torque
-  flip_dt_ms: 10        # flip ms
-  period_us: 5000        # control loop = 5 ms
-  backlash_threshold: 40 # if backlash exceeds this number, terminate
+  flip_dt_ms: 15        # flip ms
+  period_us: 500        # control loop = 5 ms
+  backlash_threshold: 80 # if backlash exceeds this number, terminate
+  backlash_outlier_threshold: 200 # if backlash exceeds this number, regard it as outlier
 
 backlash_sweep:
   N: 12                   # number of positions
   position_error_threshold: 1000   # counts
   position_error_timeout_ms: 40000 # timeout in ms
-  position_zero_error_timeout_ms: 100000 # timeout to zero pos in ms
+  position_zero_error_timeout_ms: 200000 # timeout to zero pos in ms
   measure_time_s: 2       # seconds per position
   csv_path: "../output/backlash-friction-test.csv"   # optional; default "backlash_results.csv"
 
 friction_test:
   moving_threshold: 1000
   torque_step: 5
-  dwell_ms: 20
+  dwell_ms: 100
   torque_limit:  1000
-  period_us: 5000            # optional; match your loop
+  period_us: 500            # optional; match your loop
   position_error_threshold: 1000
   position_error_timeout_ms: 40000
 

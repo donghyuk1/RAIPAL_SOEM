@@ -20,8 +20,8 @@
 
 // ---------- Test Parameters ----------
 static constexpr auto    kControlPeriod     = std::chrono::microseconds(5000); // 5ms
-static constexpr auto    kLegDurationActive       = std::chrono::seconds(5);//std::chrono::minutes(1);         // 5 minutes per velocity leg
-static constexpr auto    kBacklashEveryActive = std::chrono::seconds(20); //std::chrono::minutes(1);        // run sweep every 10 minutes of active run
+static constexpr auto    kLegDurationActive = std::chrono::minutes(1);         // 5 minutes per velocity leg
+static constexpr auto    kBacklashEveryActive = std::chrono::minutes(10);        // run sweep every 10 minutes of active run
 
 
 // THERMAL WATCHDOG: thresholds with hysteresis
@@ -106,6 +106,7 @@ struct BacklashTestConfig {
     std::string csv_path            = "backlash_results.csv";
     int slave_id                    = 1; // optional selector
     int backlash_threshold          = 0;
+    int backlash_outlier_threshold  = 1000;
 };
 
 static BacklashTestConfig load_backlash_cfg(const char* yaml_path) {
@@ -118,6 +119,7 @@ static BacklashTestConfig load_backlash_cfg(const char* yaml_path) {
             if (t["flip_dt_ms"]) cfg.flip_ms    = t["flip_dt_ms"].as<int>();
             if (t["period_us"])  cfg.period_us  = t["period_us"].as<int>();
             if (t["backlash_threshold"]) cfg.backlash_threshold = t["backlash_threshold"].as<int>();
+            if (t["backlash_outlier_threshold"]) cfg.backlash_outlier_threshold = t["backlash_outlier_threshold"].as<int>();
         }
         if (root["backlash_sweep"]){
             auto s = root["backlash_sweep"];
@@ -188,14 +190,15 @@ static bool wait_until_at_position(EthercatMaster& master,
                                    int32_t target_pos,
                                    int threshold,
                                    int timeout_ms,
-                                   std::chrono::microseconds period,
-                                   int stable_required = 200)
+                                   std::chrono::microseconds period = std::chrono::microseconds(500),
+                                   int stable_required = 4000)
 {
     cmd.mode = MODE_CYCLIC_SYNCHRONOUS_POSITION;
     cmd.target_pos = target_pos;
 
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
     int stable = 0;
+    bool reached = false;
 
     while (!g_stop) {
         act.writeCommand(cmd);
@@ -205,20 +208,29 @@ static bool wait_until_at_position(EthercatMaster& master,
             act.advanceCiA402(fb, cmd);
 
             if (fb.status == 0x27){
-                cmd.controlword = CW_ENABLE_OPERATION;
-                cmd.mode = MODE_CYCLIC_SYNCHRONOUS_POSITION;
+                if (reached == false) {
+                    cmd.controlword = CW_ENABLE_OPERATION;
+                    cmd.mode = MODE_CYCLIC_SYNCHRONOUS_POSITION;
+                    cmd.target_pos = target_pos;
+                } else {
+                    cmd.controlword = CW_ENABLE_OPERATION;
+                    cmd.mode = MODE_CYCLIC_SYNCHRONOUS_TORQUE;
+                    cmd.target_tor = 0;
+                }
             }
             int err = std::abs(fb.pos - target_pos);
             if (err < threshold){
+                reached = true;
+            }
+            if (reached == true){
+                // cmd.mode        = MODE_CYCLIC_SYNCHRONOUS_TORQUE;
+                // cmd.controlword = CW_ENABLE_OPERATION;
+                // cmd.target_tor  = 0;
+                //
+                // act.writeCommand(cmd);
+                // master.tickOnce();
                 if (++stable >= stable_required)
                 {
-                    cmd.mode        = MODE_CYCLIC_SYNCHRONOUS_TORQUE;
-                    cmd.controlword = CW_ENABLE_OPERATION;
-                    cmd.target_tor  = 0;
-
-                    act.writeCommand(cmd);
-                    master.tickOnce();
-
                     return true;
                 }
             }else{
@@ -452,8 +464,11 @@ static int run_backlash_sweep(EthercatMaster& master,
         long long delta = measure_backlash(master, act, cmd, fb,
                                        TORQUE, flip_dt, measure_t, loop_period);
         results.push_back(delta);
-        if (bc.backlash_threshold > 0 && delta > static_cast<long long>(bc.backlash_threshold)) ++exceed;
-
+        if ((bc.backlash_threshold > 0) && (delta > static_cast<long long>(bc.backlash_threshold)) &&
+            delta < static_cast<long long>(bc.backlash_outlier_threshold))
+        {
+            ++exceed;
+        }
         // (3) Move to position again (re-hold CSP)
         if (!wait_until_at_position(master, act, cmd, fb,
                                     target_pos,

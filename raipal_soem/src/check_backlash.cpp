@@ -83,39 +83,55 @@ static bool wait_until_at_position(EthercatMaster& master,
                                    int32_t target_pos,
                                    int threshold,
                                    int timeout_ms,
-                                   std::chrono::microseconds period,
-                                   int stable_required = 100
-                                   )
+                                   std::chrono::microseconds period = std::chrono::microseconds(5000),
+                                   int stable_required = 400)
 {
-    cmd.mode = MODE_CYCLIC_SYNCHRONOUS_POSITION; // 0x08
+    cmd.mode = MODE_CYCLIC_SYNCHRONOUS_POSITION;
     cmd.target_pos = target_pos;
 
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
     int stable = 0;
+    bool reached = false;
 
     while (!g_stop) {
         act.writeCommand(cmd);
         int wkc = master.tickOnce();
-        if (wkc >= master.expectedWKC()) {
+        if (wkc >= master.expectedWKC()){
             act.readFeedback(fb);
             act.advanceCiA402(fb, cmd);
 
-            if (fb.status == 0x27) {
-                cmd.controlword = CW_ENABLE_OPERATION;
-                cmd.mode = MODE_CYCLIC_SYNCHRONOUS_POSITION;
+            if (fb.status == 0x27){
+                if (reached == false) {
+                    cmd.controlword = CW_ENABLE_OPERATION;
+                    cmd.mode = MODE_CYCLIC_SYNCHRONOUS_POSITION;
+                    cmd.target_pos = target_pos;
+                } else {
+                    cmd.controlword = CW_ENABLE_OPERATION;
+                    cmd.mode = MODE_CYCLIC_SYNCHRONOUS_TORQUE;
+                    cmd.target_tor = 0;
+                }
             }
-
             int err = std::abs(fb.pos - target_pos);
-            if (err < threshold) {
-                ++stable;
-                if (stable >= stable_required) return true;
-            } else {
+            if (err < threshold){
+                reached = true;
+            }
+            if (reached == true){
+                // cmd.mode        = MODE_CYCLIC_SYNCHRONOUS_TORQUE;
+                // cmd.controlword = CW_ENABLE_OPERATION;
+                // cmd.target_tor  = 0;
+                //
+                // act.writeCommand(cmd);
+                // master.tickOnce();
+                if (++stable >= stable_required)
+                {
+                    return true;
+                }
+            }else{
                 stable = 0;
             }
         }
-
-        if (std::chrono::steady_clock::now() > deadline) {
-            std::fprintf(stderr, "Timeout waiting for position %d (last err=%d)\n", target_pos, std::abs(fb.pos - target_pos));
+        if (std::chrono::steady_clock::now() > deadline){
+            std::fprintf(stderr, "Timeout waiting for pos %d (last err=%d)\n", target_pos, std::abs(fb.pos - target_pos));
             return false;
         }
         std::this_thread::sleep_for(period);
