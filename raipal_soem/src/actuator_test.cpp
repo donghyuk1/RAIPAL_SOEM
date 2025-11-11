@@ -20,8 +20,8 @@
 
 // ---------- Test Parameters ----------
 static constexpr auto    kControlPeriod     = std::chrono::microseconds(5000); // 5ms
-static constexpr auto    kLegDurationActive       = std::chrono::seconds(10);//std::chrono::minutes(1);         // 5 minutes per velocity leg
-static constexpr auto    kBacklashEveryActive = std::chrono::minutes(1);        // run sweep every 10 minutes of active run
+static constexpr auto    kLegDurationActive       = std::chrono::seconds(5);//std::chrono::minutes(1);         // 5 minutes per velocity leg
+static constexpr auto    kBacklashEveryActive = std::chrono::seconds(20); //std::chrono::minutes(1);        // run sweep every 10 minutes of active run
 
 
 // THERMAL WATCHDOG: thresholds with hysteresis
@@ -145,6 +145,41 @@ static BacklashTestConfig load_backlash_cfg(const char* yaml_path) {
 }
 
 
+struct FrictionTestConfig {
+    int moving_threshold = 1000;          // counts to consider "moving"
+    int torque_step      = 10;            // counts per step (CST command units)
+    int dwell_ms         = 20;            // hold each torque level for this many ms
+    int torque_limit     = 4000;          // absolute max torque to try
+    int period_us        = 500;           // control loop period (matching your system)
+    int position_error_threshold = 500;   // for CSP positioning before the test
+    int position_error_timeout_ms = 10000;
+};
+
+static FrictionTestConfig load_friction_cfg(const char* yaml_path) {
+    FrictionTestConfig fc;
+    try {
+        YAML::Node root = YAML::LoadFile(yaml_path);
+        if (root["friction_test"]) {
+            auto f = root["friction_test"];
+            if (f["moving_threshold"])           fc.moving_threshold = f["moving_threshold"].as<int>();
+            if (f["torque_step"])                fc.torque_step = f["torque_step"].as<int>();
+            if (f["dwell_ms"])                   fc.dwell_ms = f["dwell_ms"].as<int>();
+            if (f["torque_limit"])               fc.torque_limit = f["torque_limit"].as<int>();
+            if (f["period_us"])                  fc.period_us = f["period_us"].as<int>();
+            if (f["position_error_threshold"])   fc.position_error_threshold = f["position_error_threshold"].as<int>();
+            if (f["position_error_timeout_ms"])  fc.position_error_timeout_ms = f["position_error_timeout_ms"].as<int>();
+        }
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "WARN: cannot read friction_test from %s (%s). Using defaults.\n", yaml_path, e.what());
+    }
+    if (fc.torque_step < 1) fc.torque_step = 1;
+    if (fc.dwell_ms < 5) fc.dwell_ms = 5;
+    if (fc.torque_limit < fc.torque_step) fc.torque_limit = fc.torque_step;
+    if (fc.period_us < 50) fc.period_us = 50;
+    if (fc.moving_threshold < 1) fc.moving_threshold = 1;
+    return fc;
+}
+
 // ---------- Helpers from check_backlash ----------
 static bool wait_until_at_position(EthercatMaster& master,
                                    EthercatActuator& act,
@@ -255,10 +290,102 @@ static long long measure_backlash(EthercatMaster& master,
 }
 
 
+static std::pair<int16_t,int16_t> measure_friction(EthercatMaster& master,
+                 EthercatActuator& act,
+                 ActuatorCommand& cmd,
+                 ActuatorFeedback& fb,
+                 int32_t target_pos,
+                 const FrictionTestConfig& fc)
+{
+    using clock = std::chrono::steady_clock;
+    const auto loop_period = std::chrono::microseconds(fc.period_us);
+
+    // 1) Move to designated position (CSP) and settle
+    if (!wait_until_at_position(master, act, cmd, fb,
+                                target_pos,
+                                fc.position_error_threshold,
+                                fc.position_error_timeout_ms,
+                                loop_period)) {
+        std::fprintf(stderr, "[FRICTION] Failed to reach target position %d\n", target_pos);
+        return {0, 0};
+    }
+
+    auto measure_one_dir = [&](int dir)->int16_t {
+        // Prepare CST
+        cmd.mode        = MODE_CYCLIC_SYNCHRONOUS_TORQUE;
+        cmd.controlword = CW_ENABLE_OPERATION;
+        cmd.target_tor  = 0;
+
+        // Reference position to detect motion
+        int32_t start_pos = fb.pos;
+
+        for (int16_t tor = 0; std::abs(static_cast<int>(tor)) <= fc.torque_limit; tor = static_cast<int16_t>(tor + dir * fc.torque_step)) {
+            // Apply this torque level for dwell_ms while watching motion
+            auto dwell_end = clock::now() + std::chrono::milliseconds(fc.dwell_ms);
+
+            while (clock::now() < dwell_end && !g_stop) {
+                act.writeCommand(cmd);
+                int wkc = master.tickOnce();
+                if (wkc >= master.expectedWKC()) {
+                    act.readFeedback(fb);
+                    act.advanceCiA402(fb, cmd);
+                    if (fb.status == 0x27) {
+                        cmd.controlword = CW_ENABLE_OPERATION;
+                        cmd.mode = MODE_CYCLIC_SYNCHRONOUS_TORQUE;
+                    }
+                    long long delta = static_cast<long long>(fb.pos) - static_cast<long long>(start_pos);
+                    if (std::llabs(delta) >= static_cast<long long>(fc.moving_threshold)) {
+                        // Motion detected — report current torque as breakaway
+                        // Zero torque before returning
+                        cmd.target_tor = 0;
+                        act.writeCommand(cmd);
+                        master.tickOnce();
+                        return tor;
+                    }
+                }
+                cmd.target_tor = tor; // keep commanding the current torque
+                std::this_thread::sleep_for(loop_period);
+            }
+        }
+
+        // No motion within limit — clamp
+        int16_t lim = static_cast<int16_t>(dir > 0 ? fc.torque_limit : -fc.torque_limit);
+        cmd.target_tor = 0;
+        act.writeCommand(cmd);
+        master.tickOnce();
+        return lim;
+    };
+
+    // 2) Positive direction
+    int16_t fric_pos = measure_one_dir(+1);
+
+    // 3) Negative direction
+    // Re-hold CSP at the same target before changing direction (optional but safer)
+    (void)wait_until_at_position(master, act, cmd, fb,
+                                 target_pos,
+                                 fc.position_error_threshold,
+                                 fc.position_error_timeout_ms,
+                                 loop_period);
+    int16_t fric_neg = measure_one_dir(-1);
+
+    // 4) Return to CSP hold at target
+    cmd.mode       = MODE_CYCLIC_SYNCHRONOUS_POSITION;
+    cmd.target_pos = target_pos;
+    (void)wait_until_at_position(master, act, cmd, fb,
+                                 target_pos,
+                                 fc.position_error_threshold,
+                                 fc.position_error_timeout_ms,
+                                 loop_period);
+
+    return {fric_pos, fric_neg};
+}
+
+
 // Run the full backlash sweep (single selected slave), append one CSV row of N deltas.
 static int run_backlash_sweep(EthercatMaster& master,
                                std::vector<EthercatActuator>& acts,
                                BacklashTestConfig& bc,
+                               FrictionTestConfig& fc,
                                const std::string& yaml_path)
 {
     const int sid = std::min(std::max(1, bc.slave_id), static_cast<int>(acts.size()));
@@ -272,7 +399,7 @@ static int run_backlash_sweep(EthercatMaster& master,
     const auto measure_t   = std::chrono::seconds(bc.measure_time_s);
     const int16_t TORQUE   = static_cast<int16_t>(bc.torque_mag);
 
-    std::printf("\n[BACKLASH] Starting sweep on slave %d using config %s\n", sid, yaml_path.c_str());
+    std::printf("\n[BACKLASH+FRCITION] Starting sweep on slave %d using config %s\n", sid, yaml_path.c_str());
 
     // Move to zero (CSP)
     cmd.controlword = CW_FAULT_RESET;
@@ -289,12 +416,14 @@ static int run_backlash_sweep(EthercatMaster& master,
     }
 
     const long long RANGE = 65536LL * 22LL;
-    std::vector<long long> results; results.reserve(bc.N);
+    std::vector<long long> results; results.reserve(bc.N * 3); // Δ, +fric, -fric triplets
+    int exceed = 0; // count positions where Δ > bc.backlash_threshold
 
     for (int i=0;i<bc.N && !g_stop;++i){
-        long long target_ll = (bc.N==1) ? 0 : (RANGE * i) / (bc.N - 1);
+        long long target_ll = (RANGE * i) / (bc.N);
         int32_t target_pos = static_cast<int32_t>(std::llround(target_ll));
 
+        // (1) Move to designated position (CSP)
         std::printf("[BACKLASH] (%d/%d) Move CSP to %d ...\n", i+1, bc.N, target_pos);
         if (!wait_until_at_position(master, act, cmd, fb,
                                     target_pos,
@@ -306,23 +435,38 @@ static int run_backlash_sweep(EthercatMaster& master,
             continue;
         }
 
-        std::printf("[BACKLASH] Measure CST ±%d flip %d ms for %d s ...\n",
-                    bc.torque_mag, bc.flip_ms, bc.measure_time_s);
+        // (2) Check backlash (CST vibration)
+        // std::printf("[BACKLASH] Measure CST ±%d flip %d ms for %d s ...\n",
+        //             bc.torque_mag, bc.flip_ms, bc.measure_time_s);
 
-        long long d = measure_backlash(master, act, cmd, fb,
+        long long delta = measure_backlash(master, act, cmd, fb,
                                        TORQUE, flip_dt, measure_t, loop_period);
-        results.push_back(d);
-        std::printf("[BACKLASH]   → Δ=%lld\n", d);
+        results.push_back(delta);
+        if (bc.backlash_threshold > 0 && delta > static_cast<long long>(bc.backlash_threshold)) ++exceed;
 
-        // hold in CSP at the current target (optional)
-        cmd.mode = MODE_CYCLIC_SYNCHRONOUS_POSITION;
-        cmd.target_pos = target_pos;
+        // (3) Move to position again (re-hold CSP)
+        if (!wait_until_at_position(master, act, cmd, fb,
+                                    target_pos,
+                                    bc.position_error_threshold,
+                                    bc.position_error_timeout_ms,
+                                    loop_period)) {
+            std::fprintf(stderr, "  - Re-hold failed; friction may be inaccurate.\n");
+                                    }
+
+        auto [fric_pos, fric_neg] = measure_friction(master, act, cmd, fb, target_pos, fc);
+
+        results.push_back(static_cast<long long>(fric_pos));
+        results.push_back(static_cast<long long>(fric_neg));
+
+        std::printf("  → Δ=%lld, +fric=%d, -fric=%d\n", delta, fric_pos, fric_neg);
+
+
     }
 
     // Append one CSV row
     std::ofstream ofs(bc.csv_path, std::ios::app);
     if (!ofs){
-        std::fprintf(stderr, "[BACKLASH] ERROR: cannot open CSV: %s\n", bc.csv_path.c_str());
+        std::fprintf(stderr, "[BACKLASH+FRICTION] ERROR: cannot open CSV: %s\n", bc.csv_path.c_str());
     }else{
         for (int i=0;i<(int)results.size();++i){
             ofs << results[i];
@@ -333,13 +477,7 @@ static int run_backlash_sweep(EthercatMaster& master,
         std::printf("[BACKLASH] Saved row to %s\n", bc.csv_path.c_str());
     }
 
-    int exceed = 0;
-    if (bc.backlash_threshold > 0) {
-        for (auto d : results) {
-            if (d > static_cast<long long>(bc.backlash_threshold)) ++exceed;
-        }
-    }
-    return exceed;   // ADD
+    return exceed; // used by the caller for termination logic
 }
 
 
@@ -370,6 +508,7 @@ int main(int argc, char** argv) {
 
         auto acfg = load_actuator_cfg(yamlpath, slave_count);
         BacklashTestConfig bcfg = load_backlash_cfg(yamlpath);
+        FrictionTestConfig fcfg = load_friction_cfg(yamlpath);
 
         ActuatorPDOMap map{};
         std::vector<EthercatActuator> acts;
@@ -482,7 +621,7 @@ int main(int argc, char** argv) {
                         for (int k=0;k<slave_count;++k) acts[k].writeCommand(cmds[k]);
                         master.tickOnce();
 
-                        int exceed = run_backlash_sweep(master, acts, bcfg, yamlpath);
+                        int exceed = run_backlash_sweep(master, acts, bcfg, fcfg, yamlpath);
 
                         if (exceed >= 3) {
                             std::printf("\n[BACKLASH] %d positions exceeded threshold (%d) → terminating test.\n",

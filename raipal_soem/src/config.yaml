@@ -30,7 +30,7 @@ actuators:
 
 
 backlash_test:
-  torque_mag: 15        # torque_mag / 1000 * rated torque
+  torque_mag: 10        # torque_mag / 1000 * rated torque
   flip_dt_ms: 10        # flip ms
   period_us: 5000        # control loop = 0.5 ms
   backlash_threshold: 40 # if backlash exceeds this number, terminate
@@ -41,5 +41,14 @@ backlash_sweep:
   position_error_timeout_ms: 40000 # timeout in ms
   position_zero_error_timeout_ms: 100000 # timeout to zero pos in ms
   measure_time_s: 2       # seconds per position
-  csv_path: "../output/backlash_results-test.csv"   # optional; default "backlash_results.csv"
+  csv_path: "../output/backlash-friction-test.csv"   # optional; default "backlash_results.csv"
+
+friction_test:
+  moving_threshold: 1000
+  torque_step: 5
+  dwell_ms: 20
+  torque_limit:  1000
+  period_us: 500            # optional; match your loop
+  position_error_threshold: 1000
+  position_error_timeout_ms: 40000
 
