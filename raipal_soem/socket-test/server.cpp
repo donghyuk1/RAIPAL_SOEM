@@ -1,115 +1,148 @@
-//
-// Created by dongg on 25. 11. 5..
-//
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <signal.h>
 
 #include <cstring>
 #include <iostream>
-#include <string>
+#include <thread>
+#include <vector>
 
-#include <cstdint>
-#include <cmath>
-#include <tuple>
+static const int PY_PORT  = 8080;
+static const int CPP_PORT = 8081;
 
-std::tuple<double, uint16_t, uint16_t> parse_frame(const uint8_t frame[6], int torque_decimal)
-{
-    // Combine D1, D2 → torque_raw
-    uint16_t torque_raw_val = (frame[0] << 8) | frame[1];
-    double torque_raw = torque_raw_val * std::pow(0.1, torque_decimal);
-    torque_raw = std::round(torque_raw * std::pow(10, torque_decimal)) / std::pow(10, torque_decimal);
+// -------------------- PYTHON CLIENT HANDLER --------------------
+void python_client_thread(int fd) {
+    std::cout << "[PY] client connected.\n";
 
-    // Combine D3, D4 → speed_raw (lowest 15 bits only)
-    uint16_t speed_raw = ((frame[2] & 0x7F) << 8) | frame[3];
+    std::vector<uint8_t> pending;
+    pending.reserve(1024);
 
-    // CRC from D5, D6
-    uint16_t crc = (frame[4] << 8) | frame[5];
+    uint8_t buf[1024];
 
-    // Check torque sign (D3 MSB)
-    bool torque_sign = frame[2] & 0x80;
-    double torque = torque_sign ? -torque_raw : torque_raw;
-
-    return std::make_tuple(torque, speed_raw, crc);
-}
-
-int main() {
-    ::signal(SIGPIPE, SIG_IGN);
-
-    const int PORT = 8080;
-    const size_t FRAME_SIZE = 6;
-    int torque_decimal = 1;
-    
-    int listen_fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (listen_fd < 0) { std::perror("socket"); return 1; }
-
-    int opt = 1;
-    if (::setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
-        std::perror("setsockopt"); return 1;
-    }
-
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;   // 0.0.0.0
-    addr.sin_port = htons(PORT);
-
-    if (::bind(listen_fd, (sockaddr*)&addr, sizeof(addr)) < 0) {
-        std::perror("bind"); return 1;
-    }
-    if (::listen(listen_fd, 1) < 0) {
-        std::perror("listen"); return 1;
-    }
-
-    std::cout << "C++ server listening on 0.0.0.0:" << PORT << std::endl;
-
-    sockaddr_in cli{};
-    socklen_t clen = sizeof(cli);
-    int conn_fd = ::accept(listen_fd, (sockaddr*)&cli, &clen);
-    if (conn_fd < 0) { std::perror("accept"); return 1; }
-
-    char cli_ip[INET_ADDRSTRLEN]{};
-    ::inet_ntop(AF_INET, &cli.sin_addr, cli_ip, sizeof(cli_ip));
-    std::cout << "Client connected from " << cli_ip << ":" << ntohs(cli.sin_port) << "\n";
-
-    std::string pending;
-    char buf[4096];
-
-    // Read bytes, split by '\n', print each complete line
     while (true) {
-        ssize_t n = ::recv(conn_fd, buf, sizeof(buf), 0);
-        if (n > 0) {
-            pending.append(buf, buf + n);
-            std::size_t pos;
-            // Instead of '\n'-delimited, accumulate until FRAME_SIZE bytes in 'pending'
-			while (pending.size() >= FRAME_SIZE) {
-				uint8_t frame[FRAME_SIZE];
-                std::memcpy(frame, pending.data(), FRAME_SIZE);
-                pending.erase(pending.begin(), pending.begin() + FRAME_SIZE);
-                
-				std::cout << "[server] received: ";
-				for (unsigned char c : frame) {
-					printf("%02X ", c);
-				}
-				std::cout << std::endl;
-				pending.erase(0, FRAME_SIZE);
-				auto [torque, speed, crc] = parse_frame(frame, torque_decimal);
+        ssize_t n = recv(fd, buf, sizeof(buf), 0);
 
-				std::cout << "Torque: " << torque << " Nm\n";
-				std::cout << "Speed: " << speed << " RPM\n";
-				std::cout << "CRC: 0x" << std::hex << crc << std::dec << "\n";
-			}
-        } else if (n == 0) {
-            std::cout << "Client disconnected.\n";
+        if (n <= 0) {
+            std::cout << "[PY] client disconnected.\n";
             break;
-        } else {
-            std::perror("recv");
-            break;
+        }
+
+        pending.insert(pending.end(), buf, buf + n);
+
+        while (pending.size() >= 6) {
+            uint8_t frame[6];
+            memcpy(frame, pending.data(), 6);
+            pending.erase(pending.begin(), pending.begin() + 6);
+
+            std::cout << "[PY] frame: ";
+            for (int i = 0; i < 6; i++) {
+                printf("%02X ", frame[i]);
+            }
+            std::cout << "\n";
         }
     }
 
-    ::close(conn_fd);
-    ::close(listen_fd);
+    close(fd);
+}
+
+// -------------------- C++ CLIENT HANDLER --------------------
+void cpp_client_thread(int fd) {
+    std::cout << "[CPP] client connected.\n";
+
+    uint8_t buf[2];
+
+    while (true) {
+        ssize_t n = recv(fd, buf, 2, 0);
+
+        if (n <= 0) {
+            std::cout << "[CPP] client disconnected.\n";
+            break;
+        }
+        if (n < 2) continue;  // partial packet → wait
+
+        int16_t net;
+        memcpy(&net, buf, 2);
+        int16_t torque = ntohs(net);
+
+        std::cout << "[CPP] torque = " << torque << "\n";
+    }
+
+    close(fd);
+}
+
+// -------------------- MAKE LISTEN SOCKET --------------------
+int make_listen_socket(int port) {
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        perror("socket");
+        exit(1);
+    }
+
+    int opt = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    sockaddr_in addr{};
+    addr.sin_family      = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port        = htons(port);
+
+    if (bind(fd, (sockaddr*)&addr, sizeof(addr)) < 0) {
+        perror("bind");
+        exit(1);
+    }
+
+    if (listen(fd, 5) < 0) {
+        perror("listen");
+        exit(1);
+    }
+
+    return fd;
+}
+
+// -------------------- MAIN SERVER LOOP --------------------
+int main() {
+    int py_fd  = make_listen_socket(PY_PORT);
+    int cpp_fd = make_listen_socket(CPP_PORT);
+
+    std::cout << "Server running.\n";
+    std::cout << " - Python clients on port " << PY_PORT << "\n";
+    std::cout << " - C++ clients on   port " << CPP_PORT << "\n";
+
+    while (true) {
+        fd_set fds;
+        FD_ZERO(&fds);
+        FD_SET(py_fd,  &fds);
+        FD_SET(cpp_fd, &fds);
+
+        int maxfd = std::max(py_fd, cpp_fd);
+
+        if (select(maxfd + 1, &fds, nullptr, nullptr, nullptr) < 0) {
+            perror("select");
+            continue;
+        }
+
+        // Python client connects
+        if (FD_ISSET(py_fd, &fds)) {
+            sockaddr_in cli{};
+            socklen_t clen = sizeof(cli);
+            int cfd = accept(py_fd, (sockaddr*)&cli, &clen);
+            if (cfd >= 0)
+                std::thread(python_client_thread, cfd).detach();
+        }
+
+        // C++ client connects
+        if (FD_ISSET(cpp_fd, &fds)) {
+            sockaddr_in cli{};
+            socklen_t clen = sizeof(cli);
+            int cfd = accept(cpp_fd, (sockaddr*)&cli, &clen);
+            if (cfd >= 0)
+                std::thread(cpp_client_thread, cfd).detach();
+        }
+    }
+
+    close(py_fd);
+    close(cpp_fd);
     return 0;
 }
+

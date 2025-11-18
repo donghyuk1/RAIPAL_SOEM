@@ -7,12 +7,15 @@
 #include <chrono>
 #include <vector>               // UPDATE: vector for N actuators
 #include <string>               // UPDATE: yaml path handling
+#include <iostream>
 
 #include <yaml-cpp/yaml.h>      // UPDATE: YAML parsing (link with yaml-cpp)
 
 #include "ethercat_master.hpp"
 #include "ethercat_actuator.hpp"
 
+#include <sys/socket.h>
+#include <arpa/inet.h>
 
 
 static uint8_t parse_mode(int mode_value)
@@ -77,126 +80,122 @@ static std::vector<actuator_cfg_t> load_cfg(const char* yaml_path, int expected_
 }
 
 int main(int argc, char** argv) {
-    // UPDATE: require YAML path
     if (argc < 3) {
-        std::puts("Usage: demo <ifname> <config.yaml>\n  e.g., demo eth0 config.yaml");
+        std::puts("Usage: demo <ifname> <config.yaml>");
         return 1;
     }
 
     try {
-        const char* ifname = argv[1];            // same naming
-        const char* ypath  = argv[2];            // UPDATE: yaml path
+        const char* ifname = argv[1];
+        const char* ypath  = argv[2];
 
-        EthercatMaster master(ifname);           // auto-discovers & enters OP (your Method B)
-        const int slave_count = master.slaveCount(); // UPDATE: use discovered N
+        // ---- TCP CLIENT ----
+		int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
+		if (sock_fd < 0) {
+			perror("socket");
+			return 1;
+		}
+
+		sockaddr_in serv{};
+		serv.sin_family = AF_INET;
+		serv.sin_port   = htons(8081);  // <-- C++ port
+		inet_pton(AF_INET, "127.0.0.1", &serv.sin_addr);
+
+		if (connect(sock_fd, (sockaddr*)&serv, sizeof(serv)) < 0) {
+			perror("connect");
+			return 1;
+		}
+
+		std::cout << "[TCP] Connected to server (C++ client)\n";
+		// ---------------------
+
+        EthercatMaster master(ifname);
+        const int slave_count = master.slaveCount();
         if (slave_count <= 0) {
-            std::fprintf(stderr, "No EtherCAT slaves discovered\n");
+            std::fprintf(stderr, "No EtherCAT slaves found\n");
             return 2;
         }
 
-        // UPDATE: load YAML config (exactly one entry per slave)
         auto cfg = load_cfg(ypath, slave_count);
 
-        // One actuator per slave with your PDO layout (same type names)
-        ActuatorPDOMap map{}; // uses defaults from header
+        ActuatorPDOMap map{};
         std::vector<EthercatActuator> acts;
         acts.reserve(slave_count);
-        for (int sid = 1; sid <= slave_count; ++sid) {
+        for (int sid = 1; sid <= slave_count; ++sid)
             acts.emplace_back(sid, map);
-        }
 
-        // Commands/feedback arrays (keeps your naming style)
         std::vector<ActuatorCommand>  cmds(slave_count);
         std::vector<ActuatorFeedback> fbs (slave_count);
 
-        // UPDATE: initialize commands from YAML (FaultReset first)
         for (int k = 0; k < slave_count; ++k) {
             cmds[k].controlword = CW_FAULT_RESET;
-            cmds[k].mode        = cfg[k].mode;           // pre-set desired mode
-            cmds[k].target_tor  = cfg[k].target_torque;  // pre-load setpoints
+            cmds[k].mode        = cfg[k].mode;
+            cmds[k].target_tor  = cfg[k].target_torque;
             cmds[k].target_vel  = cfg[k].target_velocity;
             cmds[k].target_pos  = cfg[k].target_position;
-            cmds[k].kp          = cfg[k].kp;             // impedance gains if mapped
+            cmds[k].kp          = cfg[k].kp;
             cmds[k].kd          = cfg[k].kd;
         }
 
-        const auto period = std::chrono::microseconds(5000); // 5 ms (same)
+        const auto period = std::chrono::microseconds(5000);
 
         for (int i = 0; i < 10000; ++i) {
-            // Write desired commands into PDO for all slaves
-            for (int k = 0; k < slave_count; ++k) {
-                acts[k].writeCommand(cmds[k]);
-            }
 
-            // Exchange once for whole bus
+            for (int k = 0; k < slave_count; ++k)
+                acts[k].writeCommand(cmds[k]);
+
             int wkc = master.tickOnce();
 
             if (wkc >= master.expectedWKC()) {
-                // Read feedback & advance CiA-402 per slave
                 for (int k = 0; k < slave_count; ++k) {
                     acts[k].readFeedback(fbs[k]);
-                    acts[k].advanceCiA402(fbs[k], cmds[k]); // keep your helper
+                    acts[k].advanceCiA402(fbs[k], cmds[k]);
 
-                    // When each drive reaches OP-ENABLED (0x27 low byte),
-                    // keep EO and stream the proper setpoint for its mode
                     if (fbs[k].status == 0x27) {
                         cmds[k].controlword = CW_ENABLE_OPERATION;
                         cmds[k].mode        = cfg[k].mode;
 
-                        // switch (cfg[k].mode) {
-                        //     case CST: cmds[k].target_tor = cfg[k].target_torque;   break;
-                        //     case CSV: cmds[k].target_vel = cfg[k].target_velocity; break;
-                        //     case CSP: cmds[k].target_pos = cfg[k].target_position; break;
-                        //     // case MODE_PROFILE_TORQUE:   cmds[k].target_tor = cfg[k].target_torque;   break;
-                        //     // case MODE_PROFILE_VELOCITY: cmds[k].target_vel = cfg[k].target_velocity; break;
-                        //     // case MODE_PROFILE_POSITION: cmds[k].target_pos = cfg[k].target_position; break;
-                        //     // case MODE_HOMING: /* vendor-specific handling if needed */ break;
-                        //     default: break;
-                        // }
                         switch (cfg[k].mode) {
                             case MODE_CYCLIC_SYNCHRONOUS_TORQUE:
-                                cmds[k].target_tor = cfg[k].target_torque; break;
-                            case MODE_CYCLIC_SYNCHRONOUS_VELOCITY:
-                                cmds[k].target_vel = cfg[k].target_velocity; break;
-                            case MODE_CYCLIC_SYNCHRONOUS_POSITION:
-                                cmds[k].target_pos = cfg[k].target_position; break;
                             case MODE_PROFILE_TORQUE:
-                                cmds[k].target_tor = cfg[k].target_torque; break;
-                            case MODE_PROFILE_VELOCITY:
-                                cmds[k].target_vel = cfg[k].target_velocity; break;
-                            case MODE_PROFILE_POSITION:
-                                cmds[k].target_pos = cfg[k].target_position; break;
-                            case MODE_HOMING: // (Optional) vendor-specific homing handling here
+                                cmds[k].target_tor = cfg[k].target_torque;
                                 break;
-                            default:
-                                // For NO_MODE or unrecognized modes, do nothing
-                                    break;
+                            case MODE_CYCLIC_SYNCHRONOUS_VELOCITY:
+                            case MODE_PROFILE_VELOCITY:
+                                cmds[k].target_vel = cfg[k].target_velocity;
+                                break;
+                            case MODE_CYCLIC_SYNCHRONOUS_POSITION:
+                            case MODE_PROFILE_POSITION:
+                                cmds[k].target_pos = cfg[k].target_position;
+                                break;
                         }
-                        // keep gains refreshed if your PDO maps them
+
                         cmds[k].kp = cfg[k].kp;
                         cmds[k].kd = cfg[k].kd;
                     }
                 }
 
-                // Optional: debug print (compact, similar style)
-                std::printf("WKC=%d |", wkc);
+                // SEND TARGET TORQUE TO TCP SERVER
                 for (int k = 0; k < slave_count; ++k) {
-                    std::printf(" S%d: sw=0x%02X tor=%d pos=%d vel=%d temp=%d",
-                                k+1, fbs[k].status, fbs[k].tor, fbs[k].pos, fbs[k].vel, fbs[k].temp);
-                    if (k != slave_count - 1) std::printf(" |");
-                }
-                std::printf(" \r");
+					int16_t t = htons(cmds[k].target_tor);
+					send(sock_fd, &t, sizeof(t), MSG_DONTWAIT);
+				}
+
+                // debug print
+                std::printf("WKC=%d\r", wkc);
                 std::fflush(stdout);
             }
 
             std::this_thread::sleep_for(period);
         }
 
+        close(sock_fd);  // <-- close TCP socket
+
     } catch (const std::exception& e) {
         std::fprintf(stderr, "Fatal: %s\n", e.what());
         return 1;
     }
+
     std::puts("\nDone.");
     return 0;
 }
-
