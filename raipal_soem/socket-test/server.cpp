@@ -7,9 +7,41 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <fstream>
+#include <chrono>
+#include <iomanip>
+#include <mutex>
 
 static const int PY_PORT  = 8080;
 static const int CPP_PORT = 8081;
+
+// ======================= CSV LOGGER ===========================
+std::ofstream csv_file("data_log.csv");
+std::mutex csv_mutex;
+auto start_time = std::chrono::steady_clock::now();
+
+double now_ms()
+{
+    auto now = std::chrono::steady_clock::now();
+    return std::chrono::duration<double, std::milli>(now - start_time).count();
+}
+
+void log_target(int16_t target)
+{
+    std::lock_guard<std::mutex> lock(csv_mutex);
+    csv_file << std::fixed << std::setprecision(3)
+             << now_ms() << "," << target << "," << "" << "\n";
+    csv_file.flush();
+}
+
+void log_measured(double measured)
+{
+    std::lock_guard<std::mutex> lock(csv_mutex);
+    csv_file << std::fixed << std::setprecision(3)
+             << now_ms() << "," << "" << "," << measured << "\n";
+    csv_file.flush();
+}
+// =============================================================
 
 // -------------------- PYTHON CLIENT HANDLER --------------------
 void python_client_thread(int fd) {
@@ -35,11 +67,12 @@ void python_client_thread(int fd) {
             memcpy(frame, pending.data(), 6);
             pending.erase(pending.begin(), pending.begin() + 6);
 
-            std::cout << "[PY] frame: ";
-            for (int i = 0; i < 6; i++) {
-                printf("%02X ", frame[i]);
-            }
-            std::cout << "\n";
+            uint16_t torque_raw = (frame[0] << 8) | frame[1];
+            double measured_torque = (int16_t)torque_raw;  // You can scale if needed
+
+            std::cout << "[PY] measured_torque = " << measured_torque << "\n";
+
+            log_measured(measured_torque);
         }
     }
 
@@ -65,7 +98,9 @@ void cpp_client_thread(int fd) {
         memcpy(&net, buf, 2);
         int16_t torque = ntohs(net);
 
-        std::cout << "[CPP] torque = " << torque << "\n";
+        std::cout << "[CPP] target_torque = " << torque << "\n";
+
+        log_target(torque);
     }
 
     close(fd);
@@ -102,6 +137,13 @@ int make_listen_socket(int port) {
 
 // -------------------- MAIN SERVER LOOP --------------------
 int main() {
+
+    // Create CSV header
+    {
+        std::lock_guard<std::mutex> lock(csv_mutex);
+        csv_file << "time_ms,target_torque,measured_torque\n";
+    }
+
     int py_fd  = make_listen_socket(PY_PORT);
     int cpp_fd = make_listen_socket(CPP_PORT);
 
@@ -122,7 +164,6 @@ int main() {
             continue;
         }
 
-        // Python client connects
         if (FD_ISSET(py_fd, &fds)) {
             sockaddr_in cli{};
             socklen_t clen = sizeof(cli);
@@ -131,7 +172,6 @@ int main() {
                 std::thread(python_client_thread, cfd).detach();
         }
 
-        // C++ client connects
         if (FD_ISSET(cpp_fd, &fds)) {
             sockaddr_in cli{};
             socklen_t clen = sizeof(cli);

@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
 
                 // SEND TARGET TORQUE TO TCP SERVER
                 for (int k = 0; k < slave_count; ++k) {
-					int16_t t = htons(cmds[k].target_tor);
+					int16_t t = htons(fbs[k].tor);
 					send(sock_fd, &t, sizeof(t), MSG_DONTWAIT);
 				}
 
