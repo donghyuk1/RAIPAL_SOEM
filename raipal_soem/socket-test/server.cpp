@@ -11,6 +11,7 @@
 #include <chrono>
 #include <iomanip>
 #include <mutex>
+#include <cmath>
 
 static const int PY_PORT  = 8080;
 static const int CPP_PORT = 8081;
@@ -68,7 +69,18 @@ void python_client_thread(int fd) {
             pending.erase(pending.begin(), pending.begin() + 6);
 
             uint16_t torque_raw = (frame[0] << 8) | frame[1];
-            double measured_torque = (int16_t)torque_raw;  // You can scale if needed
+
+			int torque_decimal = 0;
+            // Apply decimal scaling (0.1 for torque_decimal = 1)
+			double torque_scaled = torque_raw * std::pow(10, -torque_decimal);
+
+            double corrected_torque = (-0.273) * torque_scaled + (15.4);
+
+			// Extract sign from frame[2] MSB
+			bool torque_sign = (frame[2] & 0x80) != 0;
+
+			// Apply sign
+			double measured_torque = torque_sign ? -corrected_torque : corrected_torque;
 
             std::cout << "[PY] measured_torque = " << measured_torque << "\n";
 
@@ -98,7 +110,7 @@ void cpp_client_thread(int fd) {
         memcpy(&net, buf, 2);
         int16_t torque = ntohs(net);
 
-        std::cout << "[CPP] target_torque = " << torque << "\n";
+        std::cout << "[CPP] input_torque = " << torque << "\n";
 
         log_target(torque);
     }
@@ -141,7 +153,7 @@ int main() {
     // Create CSV header
     {
         std::lock_guard<std::mutex> lock(csv_mutex);
-        csv_file << "time_ms,target_torque,measured_torque\n";
+        csv_file << "time_ms,input_torque,measured_torque\n";
     }
 
     int py_fd  = make_listen_socket(PY_PORT);

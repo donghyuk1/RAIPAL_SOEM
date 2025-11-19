@@ -16,7 +16,7 @@
 
 - name: joint_1
   mode: 10
-  target_torque: -20
+  target_torque: 1000
   target_velocity: 10000
   target_position: 100000
 

@@ -50,7 +50,7 @@ def crc16_modbus(init_crc, dat, len):
     
     return (crc[0]<<8|crc[1])
 
-torque_decimal = 1
+torque_decimal = 0
 
 def sync_to_valid_frame(ser, frame_size=6):
     buffer = ser.read(12)
