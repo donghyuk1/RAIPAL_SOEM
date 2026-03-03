@@ -44,7 +44,22 @@ target_link_libraries(raipal_core
         PRIVATE pthread rt  # keep system libs private
 )
 
+# ============== effmea executable ===========================
 
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/effmea.cpp")
+    add_executable(effmea src/effmea.cpp)
+
+    target_link_libraries(effmea
+        PRIVATE
+        raipal_core
+        yaml-cpp
+    )
+
+    # Windows에서 .exe 강제
+    if(WIN32)
+        set_target_properties(effmea PROPERTIES OUTPUT_NAME "effmea")
+    endif()
+endif()
 
 # ============== C++ demo that uses the new library ===========================
 # Optional: only if you have a C++ main
@@ -95,5 +110,11 @@ endif()
 configure_file(
     ${CMAKE_CURRENT_LIST_DIR}/src/newsensorsocket.py
     ${CMAKE_CURRENT_BINARY_DIR}/newsensorsocket.py
+    COPYONLY
+)
+
+configure_file(
+    ${CMAKE_CURRENT_LIST_DIR}/src/uisensorsocket.py
+    ${CMAKE_CURRENT_BINARY_DIR}/uisensorsocket.py
     COPYONLY
 )
