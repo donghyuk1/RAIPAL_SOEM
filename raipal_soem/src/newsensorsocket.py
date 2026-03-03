@@ -141,7 +141,7 @@ def serial_thread():
 		timeout=0.01
 	)
 
-	ser.rs485_mode = serial.rs485.RS485Settings()
+	# ser.rs485_mode = serial.rs485.RS485Settings()
 
 	print("[RS485] Thread started")
 
@@ -171,7 +171,7 @@ def socket_thread():
 	
 	# 2️⃣ effmea.exe 실행
 	subprocess.Popen(
-		["./effmea", "eth0"]
+		["./effmea", "enxf8e43b090bc0"]
 	)
 	
 	# 3 : accept

@@ -167,7 +167,11 @@ int main(int argc, char** argv)
 					send(sock_fd, txbuf, sizeof(txbuf), MSG_DONTWAIT);
                 }
 
-                std::printf("WKC=%d\r", wkc);
+                std::cout << "WKC=" << wkc
+                        << " sw=0x" << std::hex << (int)fbs[0].status
+                        << " tor=" << std::dec << fbs[0].tor
+                        << " vel=" << fbs[0].vel
+                        << std::endl;
                 std::fflush(stdout);
             }
 
