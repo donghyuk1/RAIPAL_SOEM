@@ -66,6 +66,21 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/check_backlash.cpp")
     target_link_libraries(backlash_test PRIVATE yaml-cpp)
 endif()
 
+# ============== effmea (Python socket integrated controller) =================
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/effmea.cpp")
+    add_executable(effmea src/effmea.cpp)
+
+    target_link_libraries(effmea
+        PRIVATE
+        raipal_core
+        yaml-cpp
+    )
+
+    target_include_directories(effmea
+        PRIVATE
+        ${RAIPAL_PUBLIC_INCLUDE}
+    )
+endif()
 
 # ============== Legacy C test executables (unchanged) ========================
 # All your C test files reside in raipal_soem/src
