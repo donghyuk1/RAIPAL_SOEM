@@ -39,13 +39,12 @@ static uint8_t parse_mode(int mode_value)
     }
 }
 
-
 // ================= MAIN =================
 int main(int argc, char** argv)
 {
-    if (argc < 2) {
-    std::puts("Usage: effmea <ifname>");
-    return 1;
+    if (argc < 3) {
+        std::puts("Usage: effmea <ifname1> <ifname2>");
+        return 1;
     }
 
     try {
@@ -67,111 +66,126 @@ int main(int argc, char** argv)
             return 1;
         }
 
-        // non-blocking 설정
         fcntl(sock_fd, F_SETFL, O_NONBLOCK);
-
         std::cout << "[TCP] Connected to Python\n";
 
-        // ================= EtherCAT 초기화 =================
-        const char* ifname = argv[1];
+        // ================= EtherCAT 2개 초기화 =================
+        const char* ifname1 = argv[1];
+        const char* ifname2 = argv[2];
 
-        EthercatMaster master(ifname);
-        const int slave_count = master.slaveCount();
-        if (slave_count <= 0)
+        EthercatMaster master1(ifname1);
+        EthercatMaster master2(ifname2);
+
+        if (master1.slaveCount() <= 0 || master2.slaveCount() <= 0)
             return 2;
 
         ActuatorPDOMap map{};
-        std::vector<EthercatActuator> acts;
-        acts.reserve(slave_count);
-        for (int sid = 1; sid <= slave_count; ++sid)
-            acts.emplace_back(sid, map);
 
-        std::vector<ActuatorCommand>  cmds(slave_count);
-        std::vector<ActuatorFeedback> fbs (slave_count);
+        EthercatActuator act1(1, map);
+        EthercatActuator act2(1, map);
 
-        for (int k = 0; k < slave_count; ++k) {
-            cmds[k].controlword = CW_FAULT_RESET;
-            cmds[k].mode        = MODE_CYCLIC_SYNCHRONOUS_TORQUE;
-            cmds[k].target_tor  = 0;
-            cmds[k].target_vel  = 0;
-            cmds[k].target_pos  = 0;
-            cmds[k].kp          = 0;
-            cmds[k].kd          = 0;
-        }
+        ActuatorCommand  cmd1{}, cmd2{};
+        ActuatorFeedback fb1{}, fb2{};
+
+        cmd1.controlword = CW_FAULT_RESET;
+        cmd1.mode        = MODE_CYCLIC_SYNCHRONOUS_TORQUE;
+
+        cmd2.controlword = CW_FAULT_RESET;
+        cmd2.mode        = MODE_CYCLIC_SYNCHRONOUS_TORQUE;
 
         const auto period = std::chrono::microseconds(5000);
 
-        // ================= Main Loop =================
+        std::vector<uint8_t> rxbuffer;
+
         while (true)
         {
             auto loop_start = std::chrono::steady_clock::now();
 
-            // ---- Python → C++ 명령 수신 (non-blocking)
-            uint8_t rxbuf[8];
-            ssize_t n = recv(sock_fd, rxbuf, sizeof(rxbuf), MSG_DONTWAIT);
-            if (n == 8) {
-                int16_t tor_net;
-                int32_t vel_net;
-                int16_t mode_net;
+            // ================= Python → C++ 수신 =================
+            uint8_t tmp[32];
+            ssize_t n = recv(sock_fd, tmp, sizeof(tmp), MSG_DONTWAIT);
+            if (n > 0)
+                rxbuffer.insert(rxbuffer.end(), tmp, tmp + n);
 
-                std::memcpy(&tor_net,  rxbuf,     2);
-                std::memcpy(&vel_net,  rxbuf + 2, 4);
-                std::memcpy(&mode_net, rxbuf + 6, 2);
+            while (rxbuffer.size() >= 16)
+            {
+                int16_t a_tor_net, a_mode_net;
+                int32_t a_vel_net;
 
-                int16_t new_tor = ntohs(tor_net);
-                int32_t new_vel = ntohl(vel_net);
-                int16_t new_mode= ntohs(mode_net);
+                int16_t l_tor_net, l_mode_net;
+                int32_t l_vel_net;
 
-                for (int k = 0; k < slave_count; ++k) {
-                    cmds[k].target_tor = new_tor;
-                    cmds[k].target_vel = new_vel;
-                    cmds[k].mode       = new_mode;
-                }
+                std::memcpy(&a_tor_net,  &rxbuffer[0], 2);
+                std::memcpy(&a_vel_net,  &rxbuffer[2], 4);
+                std::memcpy(&a_mode_net, &rxbuffer[6], 2);
+
+                std::memcpy(&l_tor_net,  &rxbuffer[8], 2);
+                std::memcpy(&l_vel_net,  &rxbuffer[10], 4);
+                std::memcpy(&l_mode_net, &rxbuffer[14], 2);
+
+                rxbuffer.erase(rxbuffer.begin(), rxbuffer.begin() + 16);
+
+                cmd1.target_tor = ntohs(a_tor_net);
+                cmd1.target_vel = ntohl(a_vel_net);
+                cmd1.mode       = parse_mode(ntohs(a_mode_net));
+
+                cmd2.target_tor = ntohs(l_tor_net);
+                cmd2.target_vel = ntohl(l_vel_net);
+                cmd2.mode       = parse_mode(ntohs(l_mode_net));
             }
 
-            // ---- EtherCAT Write
-            for (int k = 0; k < slave_count; ++k)
-                acts[k].writeCommand(cmds[k]);
+            // ================= EtherCAT Write =================
+            act1.writeCommand(cmd1);
+            act2.writeCommand(cmd2);
 
-            int wkc = master.tickOnce();
+            int wkc1 = master1.tickOnce();
+            int wkc2 = master2.tickOnce();
 
-            if (wkc >= master.expectedWKC())
+            if (wkc1 >= master1.expectedWKC() &&
+                wkc2 >= master2.expectedWKC())
             {
-                for (int k = 0; k < slave_count; ++k)
-                {
-                    acts[k].readFeedback(fbs[k]);
-                    acts[k].advanceCiA402(fbs[k], cmds[k]);
+                act1.readFeedback(fb1);
+                act2.readFeedback(fb2);
 
-                    if (fbs[k].status == 0x27)
-                        cmds[k].controlword = CW_ENABLE_OPERATION;
-                }
+                act1.advanceCiA402(fb1, cmd1);
+                act2.advanceCiA402(fb2, cmd2);
 
-                // ---- C++ → Python 피드백 송신 (slave 1 기준)
-                if (slave_count > 0)
-                {
-                    uint8_t txbuf[12];
+                if (fb1.status == 0x27)
+                    cmd1.controlword = CW_ENABLE_OPERATION;
 
-					uint8_t  status = fbs[0].status;
-					uint8_t  error  = fbs[0].error;
-					int16_t  tor    = htons(fbs[0].tor);
-					int32_t  vel    = htonl(fbs[0].vel);
-					int32_t  pos    = htonl(fbs[0].pos);
+                if (fb2.status == 0x27)
+                    cmd2.controlword = CW_ENABLE_OPERATION;
 
-					txbuf[0] = status;
-					txbuf[1] = error;
+                // ================= C++ → Python 송신 =================
+                uint8_t txbuf[24];
 
-					std::memcpy(txbuf + 2, &tor, 2);
-					std::memcpy(txbuf + 4, &vel, 4);
-					std::memcpy(txbuf + 8, &pos, 4);
+                txbuf[0] = fb1.status;
+                txbuf[1] = fb1.error;
 
-					send(sock_fd, txbuf, sizeof(txbuf), MSG_DONTWAIT);
-                }
+                int16_t tor1 = htons(fb1.tor);
+                int32_t vel1 = htonl(fb1.vel);
+                int32_t pos1 = htonl(fb1.pos);
 
-                std::cout << "WKC=" << wkc
-                        << " sw=0x" << std::hex << (int)fbs[0].status
-                        << " tor=" << std::dec << fbs[0].tor
-                        << " vel=" << fbs[0].vel
-                        << std::endl;
+                std::memcpy(&txbuf[2],  &tor1, 2);
+                std::memcpy(&txbuf[4],  &vel1, 4);
+                std::memcpy(&txbuf[8],  &pos1, 4);
+
+                txbuf[12] = fb2.status;
+                txbuf[13] = fb2.error;
+
+                int16_t tor2 = htons(fb2.tor);
+                int32_t vel2 = htonl(fb2.vel);
+                int32_t pos2 = htonl(fb2.pos);
+
+                std::memcpy(&txbuf[14], &tor2, 2);
+                std::memcpy(&txbuf[16], &vel2, 4);
+                std::memcpy(&txbuf[20], &pos2, 4);
+
+                send(sock_fd, txbuf, 24, MSG_DONTWAIT);
+
+                std::printf("A: tor=%d vel=%d pos=%d | L: tor=%d vel=%d pos=%d\n",
+                            fb1.tor, fb1.vel, fb1.pos,
+                            fb2.tor, fb2.vel, fb2.pos);
                 std::fflush(stdout);
             }
 
