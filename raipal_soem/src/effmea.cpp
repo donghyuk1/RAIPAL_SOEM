@@ -42,8 +42,8 @@ static uint8_t parse_mode(int mode_value)
 // ================= MAIN =================
 int main(int argc, char** argv)
 {
-    if (argc < 3) {
-        std::puts("Usage: effmea <ifname1> <ifname2>");
+    if (argc < 2) {
+        std::puts("Usage: effmea <ifname>");
         return 1;
     }
 
