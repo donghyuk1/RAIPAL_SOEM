@@ -1,3 +1,5 @@
+# uisensorsocket.py
+
 import sys
 import serial
 import socket
@@ -246,6 +248,7 @@ def socket_thread():
 
             csv_writer.writerow([
                 ts,
+                0,
 
                 s_torque, s_speed,
 
@@ -384,6 +387,7 @@ def ui_loop(stdscr):
 
                     csv_writer.writerow([
                         ts,
+                        1,
                         s_torque, s_speed,
                         act_t_target, act_v_target,
                         load_t_target, load_v_target,
@@ -415,6 +419,7 @@ if __name__ == "__main__":
     csv_writer = csv.writer(csv_file)
     csv_writer.writerow([
     "timestamp",
+    "target_flag",
 
     "sensor_torque", "sensor_rpm",
 
