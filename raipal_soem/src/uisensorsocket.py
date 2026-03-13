@@ -269,7 +269,7 @@ def socket_thread():
             tx = struct.pack("!hihhih",
                              a["torque"], a["velocity"], a["mode"],
                              l["torque"], l["velocity"], l["mode"])
-            conn.send(tx)
+            conn.sendall(tx)
         except:
             break
 

@@ -70,19 +70,19 @@ int main(int argc, char** argv)
         std::cout << "[TCP] Connected to Python\n";
 
         // ================= EtherCAT 2개 초기화 =================
-        const char* ifname1 = argv[1];
-        const char* ifname2 = argv[2];
+        const char* ifname = argv[1];
 
-        EthercatMaster master1(ifname1);
-        EthercatMaster master2(ifname2);
+        EthercatMaster master(ifname);
 
-        if (master1.slaveCount() <= 0 || master2.slaveCount() <= 0)
+        if (master.slaveCount() < 2) {
+            std::fprintf(stderr, "Need at least 2 EtherCAT slaves\n");
             return 2;
+        }
 
         ActuatorPDOMap map{};
 
-        EthercatActuator act1(1, map);
-        EthercatActuator act2(1, map);
+        EthercatActuator act1(1, map);  // actuator
+        EthercatActuator act2(2, map);  // load
 
         ActuatorCommand  cmd1{}, cmd2{};
         ActuatorFeedback fb1{}, fb2{};
@@ -138,11 +138,9 @@ int main(int argc, char** argv)
             act1.writeCommand(cmd1);
             act2.writeCommand(cmd2);
 
-            int wkc1 = master1.tickOnce();
-            int wkc2 = master2.tickOnce();
+            int wkc = master.tickOnce();
 
-            if (wkc1 >= master1.expectedWKC() &&
-                wkc2 >= master2.expectedWKC())
+            if (wkc >= master.expectedWKC())
             {
                 act1.readFeedback(fb1);
                 act2.readFeedback(fb2);
