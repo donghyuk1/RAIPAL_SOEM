@@ -81,8 +81,8 @@ int main(int argc, char** argv)
 
         ActuatorPDOMap map{};
 
-        EthercatActuator act1(1, map);  // actuator
-        EthercatActuator act2(2, map);  // load
+        EthercatActuator act1(2, map);  // actuator
+        EthercatActuator act2(1, map);  // load
 
         ActuatorCommand  cmd1{}, cmd2{};
         ActuatorFeedback fb1{}, fb2{};
