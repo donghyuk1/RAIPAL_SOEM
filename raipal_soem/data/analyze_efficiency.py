@@ -8,10 +8,10 @@ from datetime import datetime
 # 설정
 # ==============================
 
-INPUT_CSV = "data.csv"
+INPUT_CSV = "experiment_20260316_213356.csv"
 OUTPUT_CSV = "efficiency_result.csv"
 
-wait_time = 2.0   # 안정화 대기 시간 (sec)
+wait_time = 5.0   # 안정화 대기 시간 (sec)
 
 TORQUE_SCALE = 0.102834
 
@@ -32,14 +32,15 @@ df = pd.read_csv(INPUT_CSV)
 df["time_obj"] = df["timestamp"].apply(parse_time)
 
 events = df.index[df["target_flag"] == 1].tolist()
+events.append(len(df)-1)  # 마지막 세그먼트 처리를 위해 전체 길이 추가
 
 results = []
 
 # ==============================
 # Step별 분석
 # ==============================
-
 for i, start_idx in enumerate(events):
+
 
     start_time = df.loc[start_idx, "time_obj"]
 
@@ -58,8 +59,11 @@ for i, start_idx in enumerate(events):
     if len(segment) == 0:
         continue
 
-    target_torque = df.loc[start_idx, "act_target_torque"]
-    target_vel = df.loc[start_idx, "act_target_velocity"]
+    act_target_torque = df.loc[start_idx, "act_target_torque"]
+    act_target_vel = df.loc[start_idx, "act_target_velocity"]
+
+    load_target_torque = df.loc[start_idx, "load_target_torque"]
+    load_target_vel = df.loc[start_idx, "load_target_velocity"]
 
     # ==============================
     # 단위 변환
@@ -80,18 +84,23 @@ for i, start_idx in enumerate(events):
     # Power 계산
     # ==============================
 
-    output_power = real_torque * sensor_w
-    input_power = act_tor * 2.58 / 1000 * act_w
+    # output_power = real_torque * sensor_w
+    # input_power = act_tor * 2.58 / 1000 * act_w
 
-    efficiency = output_power / input_power
+    output_power = real_torque
+    input_power = act_tor * 2.58 / 1000 * 22
 
-    efficiency = efficiency.replace([np.inf, -np.inf], np.nan).dropna()
+    # efficiency = output_power / input_power
+    efficiency = input_power / output_power
 
-    # 비정상 값 제거
-    efficiency = efficiency[(efficiency > 0) & (efficiency < 2)]
+    # efficiency = efficiency.replace([np.inf, -np.inf], np.nan).dropna()
 
-    if len(efficiency) == 0:
-        continue
+
+    # # 비정상 값 제거
+    # efficiency = efficiency[(efficiency > 0) & (efficiency < 2)]
+
+    # if len(efficiency) == 0:
+    #     continue
 
     eff_mean = efficiency.mean()
     eff_std = efficiency.std()
@@ -100,8 +109,10 @@ for i, start_idx in enumerate(events):
 
     results.append({
         "timestamp": stable_timestamp,
-        "target_torque": target_torque,
-        "target_velocity": target_vel,
+        "act_target_torque": act_target_torque,
+        "act_target_velocity": act_target_vel,
+        "load_target_torque": load_target_torque,
+        "load_target_velocity": load_target_vel,
         "efficiency_mean": eff_mean,
         "efficiency_std": eff_std
     })

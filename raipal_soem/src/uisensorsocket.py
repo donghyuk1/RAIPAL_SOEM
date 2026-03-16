@@ -1,5 +1,6 @@
 # uisensorsocket.py
 
+import os
 import sys
 import serial
 import socket
@@ -415,8 +416,22 @@ def ui_loop(stdscr):
 
 if __name__ == "__main__":
 
-    csv_file = open("data.csv", "w", newline="")
+# ==============================
+# CSV 파일 경로 생성
+# ==============================
+
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DATA_DIR = os.path.join(BASE_DIR, "../data")
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    start_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_path = os.path.join(DATA_DIR, f"experiment_{start_time_str}.csv")
+
+    csv_file = open(csv_path, "w", newline="")
     csv_writer = csv.writer(csv_file)
+
+    print(f"[LOG] Saving data to: {csv_path}")
     csv_writer.writerow([
     "timestamp",
     "target_flag",
