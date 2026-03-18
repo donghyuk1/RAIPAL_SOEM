@@ -23,14 +23,39 @@ HOST = "127.0.0.1"
 PORT = 8080
 LOOP_PERIOD = 0.005
 ETHERCAT_IFACE = None
+RX_PACKET_SIZE = 29
 # ==============================
 # 공유 데이터
 # ==============================
 
 sensor_lock = threading.Lock()
 control_lock = threading.Lock()
+feedback_lock = threading.Lock()
 
 latest_sensor_data = {"torque": 0, "speed": 0}
+latest_feedback_state = {
+    "a_temp": 0,
+    "l_temp": 0,
+    "thermal_paused": False,
+    "state_code": 0,
+    "error_code": 0,
+}
+
+STATE_TEXT = {
+    0: "RUNNING",
+    1: "THERMAL_PAUSED",
+    2: "DRIVE_FAULT",
+    3: "DRIVE_ERROR",
+}
+
+ERROR_TEXT = {
+    0: "OK",
+    1: "ACTUATOR_FAULT",
+    2: "LOAD_FAULT",
+    3: "ACTUATOR_DRIVE_ERR",
+    4: "LOAD_DRIVE_ERR",
+    5: "THERMAL_PAUSED",
+}
 
 user_command = {
     "actuator": {"torque": 0, "velocity": 0, "mode": 10},
@@ -208,6 +233,9 @@ def socket_thread():
     log_act("[TCP] Connected")
 
     rx_buffer = bytearray()
+    prev_thermal_paused = None
+    prev_state_code = None
+    prev_error_code = None
 
     while True:
         start = time.perf_counter()
@@ -220,22 +248,52 @@ def socket_thread():
         except BlockingIOError:
             pass
 
-        while len(rx_buffer) >= 24:
-            packet = rx_buffer[:24]
-            del rx_buffer[:24]
+        while len(rx_buffer) >= RX_PACKET_SIZE:
+            packet = rx_buffer[:RX_PACKET_SIZE]
+            del rx_buffer[:RX_PACKET_SIZE]
 
-            a_tor = struct.unpack(">h", packet[2:4])[0]
-            a_vel = struct.unpack(">i", packet[4:8])[0]
-            a_pos = struct.unpack(">i", packet[8:12])[0]
+            a_tor = struct.unpack(">h", packet[3:5])[0]
+            a_vel = struct.unpack(">i", packet[5:9])[0]
+            a_pos = struct.unpack(">i", packet[9:13])[0]
+            a_temp = packet[2]
 
-            l_tor = struct.unpack(">h", packet[14:16])[0]
-            l_vel = struct.unpack(">i", packet[16:20])[0]
-            l_pos = struct.unpack(">i", packet[20:24])[0]
+            l_tor = struct.unpack(">h", packet[16:18])[0]
+            l_vel = struct.unpack(">i", packet[18:22])[0]
+            l_pos = struct.unpack(">i", packet[22:26])[0]
+            l_temp = packet[15]
+            thermal_paused = bool(packet[26])
+            state_code = packet[27]
+            error_code = packet[28]
+
+            with feedback_lock:
+                latest_feedback_state["a_temp"] = a_temp
+                latest_feedback_state["l_temp"] = l_temp
+                latest_feedback_state["thermal_paused"] = thermal_paused
+                latest_feedback_state["state_code"] = state_code
+                latest_feedback_state["error_code"] = error_code
 
             ts = timestamp()
 
-            log_act(f"FB tor={a_tor} vel={a_vel} pos={a_pos}")
-            log_load(f"FB tor={l_tor} vel={l_vel} pos={l_pos}")
+            log_act(f"FB T={a_temp}C tor={a_tor} vel={a_vel} pos={a_pos}")
+            log_load(f"FB T={l_temp}C tor={l_tor} vel={l_vel} pos={l_pos}")
+
+            if prev_thermal_paused is None or prev_thermal_paused != thermal_paused:
+                state = "PAUSED" if thermal_paused else "RUNNING"
+                log_act(f"[THERMAL] {state}")
+                log_load(f"[THERMAL] {state}")
+                prev_thermal_paused = thermal_paused
+
+            if prev_state_code is None or prev_state_code != state_code:
+                state_text = STATE_TEXT.get(state_code, f"UNKNOWN({state_code})")
+                log_act(f"[STATE] {state_text}")
+                log_load(f"[STATE] {state_text}")
+                prev_state_code = state_code
+
+            if prev_error_code is None or prev_error_code != error_code:
+                error_text = ERROR_TEXT.get(error_code, f"UNKNOWN({error_code})")
+                log_act(f"[ERROR] {error_text}")
+                log_load(f"[ERROR] {error_text}")
+                prev_error_code = error_code
 
             with sensor_lock:
                 s_torque = latest_sensor_data["torque"]
@@ -315,6 +373,21 @@ def ui_loop(stdscr):
             win_cmd.addstr(6, 2, f"L Tor: {user_command['load']['torque']}")
             win_cmd.addstr(7, 2, f"L Vel: {user_command['load']['velocity']}")
             win_cmd.addstr(8, 2, f"L Mode:{user_command['load']['mode']}")
+
+        with feedback_lock:
+            a_temp = latest_feedback_state["a_temp"]
+            l_temp = latest_feedback_state["l_temp"]
+            thermal_paused = latest_feedback_state["thermal_paused"]
+            state_code = latest_feedback_state["state_code"]
+            error_code = latest_feedback_state["error_code"]
+
+        if height > 13:
+            win_cmd.addstr(10, 2, f"A Temp: {a_temp} C")
+            win_cmd.addstr(11, 2, f"L Temp: {l_temp} C")
+            win_cmd.addstr(12, 2, f"Thermal: {'PAUSE' if thermal_paused else 'RUN'}")
+        if height > 15:
+            win_cmd.addstr(13, 2, f"State: {STATE_TEXT.get(state_code, state_code)}")
+            win_cmd.addstr(14, 2, f"Error: {ERROR_TEXT.get(error_code, error_code)}")
 
         win_cmd.addstr(height-2, 2, f"> {input_buffer}")
 

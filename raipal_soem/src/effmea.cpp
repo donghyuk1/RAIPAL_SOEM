@@ -19,6 +19,26 @@
 // ================= TCP 설정 =================
 static constexpr const char* PY_HOST = "127.0.0.1";
 static constexpr int PY_PORT = 8080;
+static constexpr int TEMP_HIGH_C = 70;
+static constexpr int TEMP_LOW_C  = 60;
+static constexpr size_t RX_PACKET_SIZE = 16;
+static constexpr size_t TX_PACKET_SIZE = 29;
+
+enum TelemetryStateCode : uint8_t {
+    STATE_RUNNING        = 0,
+    STATE_THERMAL_PAUSED = 1,
+    STATE_DRIVE_FAULT    = 2,
+    STATE_DRIVE_ERROR    = 3,
+};
+
+enum TelemetryErrorCode : uint8_t {
+    ERR_OK                 = 0,
+    ERR_ACTUATOR_FAULT     = 1,
+    ERR_LOAD_FAULT         = 2,
+    ERR_ACTUATOR_DRIVE_ERR = 3,
+    ERR_LOAD_DRIVE_ERR     = 4,
+    ERR_THERMAL_PAUSED     = 5,
+};
 
 // ================= mode parser =================
 static uint8_t parse_mode(int mode_value)
@@ -96,6 +116,7 @@ int main(int argc, char** argv)
         const auto period = std::chrono::microseconds(5000);
 
         std::vector<uint8_t> rxbuffer;
+        bool thermal_paused = false;
 
         while (true)
         {
@@ -107,7 +128,7 @@ int main(int argc, char** argv)
             if (n > 0)
                 rxbuffer.insert(rxbuffer.end(), tmp, tmp + n);
 
-            while (rxbuffer.size() >= 16)
+            while (rxbuffer.size() >= RX_PACKET_SIZE)
             {
                 int16_t a_tor_net, a_mode_net;
                 int32_t a_vel_net;
@@ -123,7 +144,7 @@ int main(int argc, char** argv)
                 std::memcpy(&l_vel_net,  &rxbuffer[10], 4);
                 std::memcpy(&l_mode_net, &rxbuffer[14], 2);
 
-                rxbuffer.erase(rxbuffer.begin(), rxbuffer.begin() + 16);
+                rxbuffer.erase(rxbuffer.begin(), rxbuffer.begin() + RX_PACKET_SIZE);
 
                 cmd1.target_tor = ntohs(a_tor_net);
                 cmd1.target_vel = ntohl(a_vel_net);
@@ -132,6 +153,16 @@ int main(int argc, char** argv)
                 cmd2.target_tor = ntohs(l_tor_net);
                 cmd2.target_vel = ntohl(l_vel_net);
                 cmd2.mode       = parse_mode(ntohs(l_mode_net));
+            }
+
+            if (thermal_paused) {
+                // Keep drives enabled but force zero command while overheated.
+                cmd1.mode = MODE_CYCLIC_SYNCHRONOUS_VELOCITY;
+                cmd2.mode = MODE_CYCLIC_SYNCHRONOUS_VELOCITY;
+                cmd1.target_tor = 0;
+                cmd2.target_tor = 0;
+                cmd1.target_vel = 0;
+                cmd2.target_vel = 0;
             }
 
             // ================= EtherCAT Write =================
@@ -145,6 +176,12 @@ int main(int argc, char** argv)
                 act1.readFeedback(fb1);
                 act2.readFeedback(fb2);
 
+                if (!thermal_paused && (fb1.temp >= TEMP_HIGH_C || fb2.temp >= TEMP_HIGH_C)) {
+                    thermal_paused = true;
+                } else if (thermal_paused && (fb1.temp <= TEMP_LOW_C && fb2.temp <= TEMP_LOW_C)) {
+                    thermal_paused = false;
+                }
+
                 act1.advanceCiA402(fb1, cmd1);
                 act2.advanceCiA402(fb2, cmd2);
 
@@ -155,35 +192,64 @@ int main(int argc, char** argv)
                     cmd2.controlword = CW_ENABLE_OPERATION;
 
                 // ================= C++ → Python 송신 =================
-                uint8_t txbuf[24];
+                uint8_t txbuf[TX_PACKET_SIZE];
 
                 txbuf[0] = fb1.status;
                 txbuf[1] = fb1.error;
+                txbuf[2] = fb1.temp;
 
                 int16_t tor1 = htons(fb1.tor);
                 int32_t vel1 = htonl(fb1.vel);
                 int32_t pos1 = htonl(fb1.pos);
 
-                std::memcpy(&txbuf[2],  &tor1, 2);
-                std::memcpy(&txbuf[4],  &vel1, 4);
-                std::memcpy(&txbuf[8],  &pos1, 4);
+                std::memcpy(&txbuf[3],  &tor1, 2);
+                std::memcpy(&txbuf[5],  &vel1, 4);
+                std::memcpy(&txbuf[9],  &pos1, 4);
 
-                txbuf[12] = fb2.status;
-                txbuf[13] = fb2.error;
+                txbuf[13] = fb2.status;
+                txbuf[14] = fb2.error;
+                txbuf[15] = fb2.temp;
 
                 int16_t tor2 = htons(fb2.tor);
                 int32_t vel2 = htonl(fb2.vel);
                 int32_t pos2 = htonl(fb2.pos);
 
-                std::memcpy(&txbuf[14], &tor2, 2);
-                std::memcpy(&txbuf[16], &vel2, 4);
-                std::memcpy(&txbuf[20], &pos2, 4);
+                std::memcpy(&txbuf[16], &tor2, 2);
+                std::memcpy(&txbuf[18], &vel2, 4);
+                std::memcpy(&txbuf[22], &pos2, 4);
+                txbuf[26] = thermal_paused ? 1 : 0;
+                uint8_t error_code = ERR_OK;
+                if (fb1.status == 0x08) {
+                    error_code = ERR_ACTUATOR_FAULT;
+                } else if (fb2.status == 0x08) {
+                    error_code = ERR_LOAD_FAULT;
+                } else if (fb1.error != 0) {
+                    error_code = ERR_ACTUATOR_DRIVE_ERR;
+                } else if (fb2.error != 0) {
+                    error_code = ERR_LOAD_DRIVE_ERR;
+                } else if (thermal_paused) {
+                    error_code = ERR_THERMAL_PAUSED;
+                }
 
-                send(sock_fd, txbuf, 24, MSG_DONTWAIT);
+                uint8_t state_code = STATE_RUNNING;
+                if (error_code == ERR_ACTUATOR_FAULT || error_code == ERR_LOAD_FAULT) {
+                    state_code = STATE_DRIVE_FAULT;
+                } else if (error_code == ERR_ACTUATOR_DRIVE_ERR || error_code == ERR_LOAD_DRIVE_ERR) {
+                    state_code = STATE_DRIVE_ERROR;
+                } else if (thermal_paused) {
+                    state_code = STATE_THERMAL_PAUSED;
+                }
 
-                std::printf("A: tor=%d vel=%d pos=%d | L: tor=%d vel=%d pos=%d\n",
-                            fb1.tor, fb1.vel, fb1.pos,
-                            fb2.tor, fb2.vel, fb2.pos);
+                txbuf[27] = state_code;
+                txbuf[28] = error_code;
+
+                send(sock_fd, txbuf, TX_PACKET_SIZE, MSG_DONTWAIT);
+
+                std::printf("A:T=%u tor=%d vel=%d pos=%d | L:T=%u tor=%d vel=%d pos=%d | TH=%d ST=%u ER=%u\n",
+                            fb1.temp, fb1.tor, fb1.vel, fb1.pos,
+                            fb2.temp, fb2.tor, fb2.vel, fb2.pos,
+                            thermal_paused ? 1 : 0,
+                            state_code, error_code);
                 std::fflush(stdout);
             }
 
