@@ -1,0 +1,1 @@
+timestamp,target_flag,sensor_torque,sensor_rpm,act_target_torque,act_target_velocity,load_target_torque,load_target_velocity,act_torque,act_vel,act_pos,load_torque,load_vel,load_pos,thermal_paused

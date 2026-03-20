@@ -1,0 +1,2 @@
+file_name,act_target_torque,load_target_velocity,sample_count,efficiency_mean,efficiency_std,efficiency_min,efficiency_max
+torque_+600.csv,600,500000,42388,-0.9091242959319806,0.24286788835171638,-3.172072480586387,-0.03876471051233396

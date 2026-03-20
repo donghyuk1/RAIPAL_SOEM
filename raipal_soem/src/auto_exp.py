@@ -39,6 +39,9 @@ VEL_STEP = 100000
 
 ACT_MODE = 10   # CST
 LOAD_MODE = 9   # CSV
+SHUTDOWN_MODE = 10
+SHUTDOWN_HOLD_S = 0.5
+FB_LOG_PERIOD_S = 0.1
 
 STATE_TEXT = {
     0: "RUNNING",
@@ -79,6 +82,7 @@ status = {
     "a_temp": 0,
     "l_temp": 0,
     "log_path": "",
+    "rx_frames": 0,
 }
 
 sensor_logs = deque(maxlen=300)
@@ -108,21 +112,21 @@ def clamp_range(start, end, step):
     return list(range(start, end + (1 if step > 0 else -1), step))
 
 
-class PairLogWriter:
+class TorqueLogWriter:
     def __init__(self, experiment_dir):
         self.experiment_dir = experiment_dir
         self.csv_file = None
         self.csv_writer = None
-        self.current_pair = None
+        self.current_torque = None
         self.path = ""
 
-    def open_for_pair(self, torque, velocity):
+    def open_for_torque(self, torque):
         self.close()
-        name = f"torque_{torque:+d}_velocity_{velocity}.csv"
+        name = f"torque_{torque:+d}.csv"
         self.path = os.path.join(self.experiment_dir, name)
         self.csv_file = open(self.path, "w", newline="")
         self.csv_writer = csv.writer(self.csv_file)
-        self.current_pair = (torque, velocity)
+        self.current_torque = torque
         self.csv_writer.writerow([
             "timestamp",
             "target_flag",
@@ -152,8 +156,29 @@ class PairLogWriter:
             self.csv_file.close()
             self.csv_file = None
             self.csv_writer = None
-            self.current_pair = None
+            self.current_torque = None
             self.path = ""
+
+
+def build_tx_packet(a_torque, a_velocity, a_mode, l_torque, l_velocity, l_mode):
+    return struct.pack(
+        "!hihhih",
+        int(a_torque), int(a_velocity), int(a_mode),
+        int(l_torque), int(l_velocity), int(l_mode),
+    )
+
+
+def send_shutdown_commands(conn):
+    if conn is None:
+        return
+    shutdown_packet = build_tx_packet(0, 0, SHUTDOWN_MODE, 0, 0, SHUTDOWN_MODE)
+    end_t = time.perf_counter() + SHUTDOWN_HOLD_S
+    while time.perf_counter() < end_t:
+        try:
+            conn.sendall(shutdown_packet)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            break
+        time.sleep(LOOP_PERIOD)
 
 
 def serial_thread():
@@ -194,7 +219,7 @@ def socket_thread(ethercat_iface):
     session_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     experiment_dir = os.path.join(data_dir, f"experiment_{session_stamp}")
     os.makedirs(experiment_dir, exist_ok=True)
-    writer = PairLogWriter(experiment_dir)
+    writer = TorqueLogWriter(experiment_dir)
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -223,9 +248,11 @@ def socket_thread(ethercat_iface):
         prev_pair = None
         prev_state_code = None
         prev_error_code = None
+        last_fb_log_t = 0.0
+        rx_frames = 0
 
         if pairs:
-            writer.open_for_pair(pairs[0][0], pairs[0][1])
+            writer.open_for_torque(pairs[0][0])
             with status_lock:
                 status["log_path"] = writer.path
             log_act(f"[AUTO] Log dir: {experiment_dir}")
@@ -270,6 +297,7 @@ def socket_thread(ethercat_iface):
                 state_code = packet[27]
                 error_code = packet[28]
                 latest_thermal_paused = thermal_paused
+                rx_frames += 1
                 if thermal_paused:
                     pair_interrupted = True
 
@@ -292,6 +320,7 @@ def socket_thread(ethercat_iface):
                     status["thermal_paused"] = thermal_paused
                     status["state_code"] = state_code
                     status["error_code"] = error_code
+                    status["rx_frames"] = rx_frames
 
                 if pair_index < total_pairs:
                     cmd_torque, cmd_velocity = pairs[pair_index]
@@ -326,8 +355,11 @@ def socket_thread(ethercat_iface):
                         int(thermal_paused),
                     ])
 
-                log_act(f"FB T={a_temp}C tor={a_tor} vel={a_vel} pos={a_pos}")
-                log_load(f"FB T={l_temp}C tor={l_tor} vel={l_vel} pos={l_pos}")
+                now_log_t = time.perf_counter()
+                if now_log_t - last_fb_log_t >= FB_LOG_PERIOD_S:
+                    log_act(f"FB T={a_temp}C tor={a_tor} vel={a_vel} pos={a_pos}")
+                    log_load(f"FB T={l_temp}C tor={l_tor} vel={l_vel} pos={l_pos}")
+                    last_fb_log_t = now_log_t
 
             now = time.perf_counter()
             dt = now - last_tick
@@ -352,7 +384,8 @@ def socket_thread(ethercat_iface):
                     retry_count = 0
                     if pair_index < total_pairs:
                         next_t, next_v = pairs[pair_index]
-                        writer.open_for_pair(next_t, next_v)
+                        if writer.current_torque != next_t:
+                            writer.open_for_torque(next_t)
                         with status_lock:
                             status["log_path"] = writer.path
                         log_act(f"[AUTO] Next pair torque={next_t}, velocity={next_v}")
@@ -384,12 +417,10 @@ def socket_thread(ethercat_iface):
 
             if prev_pair != (target_torque, target_velocity):
                 prev_pair = (target_torque, target_velocity)
+                log_act(f"[TX] {target_torque} 0 {ACT_MODE} 0")
+                log_load(f"[TX] 0 {target_velocity} {LOAD_MODE} 1")
 
-            tx = struct.pack(
-                "!hihhih",
-                int(target_torque), 0, ACT_MODE,
-                0, int(target_velocity), LOAD_MODE
-            )
+            tx = build_tx_packet(target_torque, 0, ACT_MODE, 0, target_velocity, LOAD_MODE)
             try:
                 conn.sendall(tx)
             except (BrokenPipeError, ConnectionResetError):
@@ -403,6 +434,9 @@ def socket_thread(ethercat_iface):
                 time.sleep(sleep_s)
 
     finally:
+        log_act(f"[TX] Shutdown command: 0 0 {SHUTDOWN_MODE} 0 / 0 0 {SHUTDOWN_MODE} 1")
+        log_load(f"[TX] Shutdown command: 0 0 {SHUTDOWN_MODE} 0 / 0 0 {SHUTDOWN_MODE} 1")
+        send_shutdown_commands(conn)
         writer.close()
         if conn is not None:
             try:
@@ -460,6 +494,7 @@ def ui_loop(stdscr):
             a_temp = status["a_temp"]
             l_temp = status["l_temp"]
             log_path = status["log_path"]
+            rx_frames = status["rx_frames"]
 
         state_text = STATE_TEXT.get(state_code, f"UNKNOWN({state_code})")
         error_text = ERROR_TEXT.get(error_code, f"UNKNOWN({error_code})")
@@ -477,6 +512,7 @@ def ui_loop(stdscr):
         win_cmd.addstr(11, 2, f"State: {state_text[:col_w-10]}")
         win_cmd.addstr(12, 2, f"Error: {error_text[:col_w-10]}")
         win_cmd.addstr(13, 2, f"Done: {'YES' if exp_done else 'NO'}")
+        win_cmd.addstr(14, 2, f"RX frames: {rx_frames}")
 
         if log_path:
             base = os.path.basename(log_path)
@@ -505,10 +541,17 @@ def main():
 
     ethercat_iface = sys.argv[1]
 
-    threading.Thread(target=serial_thread, daemon=True).start()
-    threading.Thread(target=socket_thread, args=(ethercat_iface,), daemon=True).start()
+    serial_t = threading.Thread(target=serial_thread, daemon=True)
+    socket_t = threading.Thread(target=socket_thread, args=(ethercat_iface,), daemon=False)
 
-    curses.wrapper(ui_loop)
+    serial_t.start()
+    socket_t.start()
+
+    try:
+        curses.wrapper(ui_loop)
+    finally:
+        stop_event.set()
+        socket_t.join(timeout=3.0)
     return 0
 
 
