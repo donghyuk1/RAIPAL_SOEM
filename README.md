@@ -78,6 +78,9 @@ cmake --build . -j
 
 # Run actuator control defined in config.yaml
 ./demo <adapter> <config.yaml>
+
+# Long-run aging test: velocity legs + periodic backlash/friction sweeps
+./actuator_test <adapter> <config.yaml>
 ```
 
 ### What the tools do
@@ -85,6 +88,11 @@ cmake --build . -j
   can reach OP state while exchanging process data.
 - `slaveinfo`: enumerates slaves and shows SII/PDO configuration. Use `-map`
   to print PDO mapping for each slave (helps validate IO layout).
+- `actuator_test`: long-run aging test. Drives the actuators through forward/
+  reverse velocity legs and periodically runs backlash and friction sweeps,
+  logging results to CSV. Reads the `backlash_test`/`friction_test` sections of
+  `config.yaml`. Has a thermal watchdog that pauses motion above 60°C and
+  resumes below 50°C.
 
 ### How `main.cpp` uses `config.yaml`
 `demo` expects one YAML entry per discovered slave in `config.yaml`:
@@ -103,7 +111,7 @@ At runtime:
 4. When a drive reaches “Operation Enabled,” the command for its mode is applied.
 
 Other YAML sections (`backlash_test`, `friction_test`) are used by
-`actuator_test`/`backlash_test`, not by `demo`.
+`actuator_test`, not by `demo`.
 
 ## Actuator Bring-Up (from zero knowledge)
 This project uses the `EthercatActuator` class (`raipal_soem/include/ethercat_actuator.hpp`)

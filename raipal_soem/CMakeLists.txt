@@ -54,6 +54,15 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/main.cpp")
     target_link_libraries(demo PRIVATE yaml-cpp)
 endif()
 
+# ============== C++ actuator test (backlash & friction aging) ================
+# Standalone C++ tool that drives the actuators through velocity legs and
+# periodic backlash/friction sweeps. Uses the same core lib + yaml-cpp as demo.
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/actuator_test.cpp")
+    add_executable(actuator_test src/actuator_test.cpp)
+    target_link_libraries(actuator_test PRIVATE raipal_core)
+    target_link_libraries(actuator_test PRIVATE yaml-cpp)
+endif()
+
 
 # ============== Legacy C test executables (unchanged) ========================
 # All your C test files reside in raipal_soem/src
