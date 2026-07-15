@@ -54,18 +54,6 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/main.cpp")
     target_link_libraries(demo PRIVATE yaml-cpp)
 endif()
 
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/actuator_test.cpp")
-    add_executable(actuator_test src/actuator_test.cpp)
-    target_link_libraries(actuator_test PRIVATE raipal_core)
-    target_link_libraries(actuator_test PRIVATE yaml-cpp)
-endif()
-
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/check_backlash.cpp")
-    add_executable(backlash_test src/check_backlash.cpp)
-    target_link_libraries(backlash_test PRIVATE raipal_core)
-    target_link_libraries(backlash_test PRIVATE yaml-cpp)
-endif()
-
 
 # ============== Legacy C test executables (unchanged) ========================
 # All your C test files reside in raipal_soem/src
@@ -78,11 +66,6 @@ endif()
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/slaveinfo.c")
     add_executable(slaveinfo src/slaveinfo.c)
     target_link_libraries(slaveinfo PRIVATE ${COMMON_LINK_LIBS})
-endif()
-
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/simple_test_XMC.c")
-    add_executable(simple_test_XMC src/simple_test_XMC.c)
-    target_link_libraries(simple_test_XMC PRIVATE ${COMMON_LINK_LIBS})
 endif()
 
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/src/simple_test_dongdrive.c")
