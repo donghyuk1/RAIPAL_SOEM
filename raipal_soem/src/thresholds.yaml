@@ -1,0 +1,23 @@
+# thresholds.yaml
+#
+# Stop-criteria thresholds for actuator_test, kept separate from config.yaml
+# so they can be tuned without touching the actuator/test configuration.
+#
+# Usage: actuator_test <ifname> config.yaml thresholds.yaml
+# (if the 3rd argument is omitted, "thresholds.yaml" in the CWD is used)
+#
+# These values are GLOBAL — applied to every connected actuator. Each actuator
+# is evaluated independently against them after every sweep.
+
+# --- Backlash stop criterion ---
+# Within one sweep, a position "exceeds" when its measured backlash Δ is
+# strictly between backlash_threshold and backlash_outlier_threshold.
+# An actuator stops when its exceed count is greater than backlash_exceed_limit.
+backlash_threshold: 300           # Δ above this counts as an exceed
+backlash_outlier_threshold: 1000  # Δ at/above this is ignored as a sensor outlier
+backlash_exceed_limit: 3          # stop the actuator when exceed count > 3
+
+# --- Friction stop criterion ---
+# An actuator stops when its mean breakaway torque over the sweep drops below
+# this value. Set to 0 to disable the friction criterion entirely.
+friction_threshold: 0
