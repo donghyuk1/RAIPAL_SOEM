@@ -425,7 +425,9 @@ struct SweepResult {
 
 // Run one full sweep on all ACTIVE actuators together. Starts by STABILIZING at
 // the current position (no homing move -> the old "failed to reach origin, abort"
-// path is gone), then walks the N range positions measuring backlash + friction.
+// path is gone), then walks N points spaced across RANGE *relative to that
+// starting position*, measuring backlash + friction at each one. Nothing is ever
+// commanded back to encoder zero.
 static SweepResult run_backlash_sweep_multi(EthercatMaster& master,
                                             std::vector<EthercatActuator>& acts,
                                             std::vector<ActuatorCommand>& cmds,
@@ -465,17 +467,23 @@ static SweepResult run_backlash_sweep_multi(EthercatMaster& master,
         std::fprintf(stderr, "[SWEEP] Note: not all actuators settled at current position; continuing.\n");
     }
 
+    // Sweep points are RELATIVE to wherever each actuator is sitting right now:
+    // the drive never travels back to encoder zero, it just walks forward from here.
+    const std::vector<int32_t>& base = cur;
+
     const long long RANGE = 65536LL * 22LL;
     for (int i = 0; i < bc.N && !g_stop; ++i) {
-        const int32_t tp = static_cast<int32_t>((RANGE * i) / bc.N);
-        std::vector<int32_t> targets(n, tp);
+        const long long offset = (RANGE * i) / bc.N;
+        std::vector<int32_t> targets(n, 0);
+        for (size_t k = 0; k < n; ++k)
+            targets[k] = static_cast<int32_t>(static_cast<long long>(base[k]) + offset);
 
         // (1) Move to designated position (CSP). Failure here is non-fatal.
-        std::printf("[SWEEP] (%d/%d) Move CSP to %d ...\n", i + 1, bc.N, tp);
+        std::printf("[SWEEP] (%d/%d) Move CSP to base%+lld ...\n", i + 1, bc.N, offset);
         if (!wait_until_at_position_multi(master, acts, cmds, fbs, active, targets,
                                           bc.position_error_threshold,
                                           bc.position_error_timeout_ms, loop_period)) {
-            std::fprintf(stderr, "[SWEEP] Some actuators did not reach %d; measuring anyway.\n", tp);
+            std::fprintf(stderr, "[SWEEP] Some actuators did not reach base%+lld; measuring anyway.\n", offset);
         }
 
         // (2) Backlash (CST vibration)
